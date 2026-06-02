@@ -1,0 +1,30 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+
+permissions:
+  contents: read
+
+jobs:
+  protocol:
+    name: Protocol checks
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Validate JSON artifacts
+        run: |
+          python -m json.tool docs/platform-contract-v0.json >/dev/null
+          python -m json.tool docs/api/v1-openapi.json >/dev/null
+      - name: Check generated OpenAPI artifact
+        run: python scripts/generate_openapi_v1.py --check
+      - name: Validate protocol lock
+        run: python scripts/validate_protocol_locks.py --repo-root . --skip-latest-check
+      - name: Compile Python scripts
+        run: python -m py_compile scripts/generate_openapi_v1.py scripts/platform_conformance.py scripts/validate_protocol_locks.py
