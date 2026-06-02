@@ -1,5 +1,0 @@
-# Self-referencing lock: this is the protocol repo itself.
-# When other repos validate, they compare against this revision.
-repo = "https://github.com/Trace-DB/tracedb-protocol"
-revision = "1a0e0e277fafd0dcf333d34b7311ce541118091a"
-contract = "platform-contract-v0"
