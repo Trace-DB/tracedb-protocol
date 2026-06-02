@@ -1,7 +1,7 @@
 {
   "contract": "tracedb-platform-contract-v0",
   "version": "0.1.0-development",
-  "status": "contract-freeze-draft",
+  "status": "contract-freeze",
   "updated": "2026-05-22",
   "wire_contract": "docs/api/v1-http.md",
   "openapi_contract": "docs/api/v1-openapi.json",

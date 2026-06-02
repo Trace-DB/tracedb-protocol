@@ -4,7 +4,7 @@ tags:
   - tracedb
   - platform-contract
   - sdk
-status: contract-freeze-draft
+status: contract-freeze
 type: platform-contract
 updated: 2026-05-22
 ---
