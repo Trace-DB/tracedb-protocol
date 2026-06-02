@@ -3,7 +3,6 @@ from __future__ import annotations
 import argparse
 import json
 import os
-import shutil
 import socket
 import subprocess
 import sys
@@ -14,10 +13,20 @@ import urllib.request
 from pathlib import Path
 from typing import Any
 
-
-REPO_ROOT = Path(__file__).resolve().parents[1]
-DEFAULT_CONTRACT = Path("docs/platform-contract-v0.json")
-DEFAULT_SURFACES = ["http_direct", "rust_sdk"]
+PROTOCOL_REPO_ROOT = Path(__file__).resolve().parents[1]
+REPO_ROOT = Path(
+    os.environ.get("TRACEDB_CORE_REPO", PROTOCOL_REPO_ROOT.parent / "tracedb")
+)
+DEFAULT_CONTRACT = PROTOCOL_REPO_ROOT / "docs/platform-contract-v0.json"
+DEFAULT_SURFACES = ["http_direct"]
+PYTHON_SDK_REPO_ENV = "TRACEDB_PYTHON_SDK_REPO"
+TYPESCRIPT_SDK_REPO_ENV = "TRACEDB_TYPESCRIPT_SDK_REPO"
+RUST_SDK_REPO_ENV = "TRACEDB_RUST_SDK_REPO"
+SDK_SURFACE_REPOS = {
+    "rust_sdk": (RUST_SDK_REPO_ENV, "tracedb-rust"),
+    "typescript_sdk": (TYPESCRIPT_SDK_REPO_ENV, "tracedb-js"),
+    "python_sdk": (PYTHON_SDK_REPO_ENV, "tracedb-python"),
+}
 TENANT_A_ACTOR_HEADERS = {
     "x-tracedb-tenant-id": "tenant-a",
     "x-tracedb-database-id": "local",
@@ -25,16 +34,25 @@ TENANT_A_ACTOR_HEADERS = {
     "x-tracedb-token-identity": "platform-conformance",
     "x-tracedb-request-id": "platform-conformance",
 }
-PYTHON_SDK_CONFORMANCE_EVIDENCE = "installed package + clients/python/http_smoke.py"
-TRACEQL_NATIVE_CONFORMANCE_EVIDENCE = "POST /v1/traceql native TraceDB command statements"
-GRAPHQL_NATIVE_CONFORMANCE_EVIDENCE = "POST /v1/graphql native GraphQL data/errors envelope"
+PYTHON_SDK_CONFORMANCE_EVIDENCE = "installed standalone package + http_smoke.py"
+RUST_SDK_CONFORMANCE_EVIDENCE = "standalone Rust SDK quickstart"
+TRACEQL_NATIVE_CONFORMANCE_EVIDENCE = (
+    "POST /v1/traceql native TraceDB command statements"
+)
+GRAPHQL_NATIVE_CONFORMANCE_EVIDENCE = (
+    "POST /v1/graphql native GraphQL data/errors envelope"
+)
 TRACEQL_SQLISH_CONFORMANCE_EVIDENCE = "POST /v1/traceql bounded SQL-ish SELECT adapter"
 TRACEQL_SQLISH_NOT_CHECKED_REASON = (
     "SQL-ish adapter surface only proves query/explain/error behavior; "
     "schema/write/admin scenarios remain HTTP/SDK surfaces"
 )
-GRAPHQL_HTTP_CONFORMANCE_EVIDENCE = "POST /v1/graphql/bounded bounded GraphQL query adapter"
-GRAPHQL_SCHEMA_CONFORMANCE_EVIDENCE = "GET /v1/graphql/schema generated SDL from TableSchema"
+GRAPHQL_HTTP_CONFORMANCE_EVIDENCE = (
+    "POST /v1/graphql/bounded bounded GraphQL query adapter"
+)
+GRAPHQL_SCHEMA_CONFORMANCE_EVIDENCE = (
+    "GET /v1/graphql/schema generated SDL from TableSchema"
+)
 GRAPHQL_HTTP_NOT_CHECKED_REASON = (
     "GraphQL HTTP adapter surface only proves schema export/query/explain/error behavior; "
     "write/admin scenarios remain HTTP/SDK surfaces; "
@@ -73,12 +91,16 @@ def scenario_result(
     return result
 
 
-def passed(scenario_id: str, evidence: str, details: dict[str, Any] | None = None) -> dict[str, Any]:
+def passed(
+    scenario_id: str, evidence: str, details: dict[str, Any] | None = None
+) -> dict[str, Any]:
     return scenario_result(scenario_id, "passed", evidence=evidence, details=details)
 
 
 def failed(scenario_id: str, error: Exception) -> dict[str, Any]:
-    return scenario_result(scenario_id, "failed", reason=f"{type(error).__name__}: {error}")
+    return scenario_result(
+        scenario_id, "failed", reason=f"{type(error).__name__}: {error}"
+    )
 
 
 def not_checked(scenario_id: str, reason: str) -> dict[str, Any]:
@@ -94,7 +116,10 @@ def empty_surface_report(
     return finalize_surface(
         surface_id,
         status,
-        [scenario_result(scenario_id, status, reason=reason) for scenario_id in contract_scenario_ids(manifest)],
+        [
+            scenario_result(scenario_id, status, reason=reason)
+            for scenario_id in contract_scenario_ids(manifest)
+        ],
         evidence=[],
     )
 
@@ -117,7 +142,9 @@ def finalize_surface(
         "complete": complete,
         "passed": passed_count,
         "required": len(scenarios),
-        "not_checked": sum(1 for scenario in scenarios if scenario["status"] == "not_checked"),
+        "not_checked": sum(
+            1 for scenario in scenarios if scenario["status"] == "not_checked"
+        ),
         "failed": failed_count,
         "evidence": evidence,
         "scenarios": scenarios,
@@ -175,11 +202,15 @@ def request_json(
         payload = error.read().decode("utf-8")
         status = error.code
     if status != expected_status:
-        raise RuntimeError(f"{method} {path} returned {status}, expected {expected_status}: {payload}")
+        raise RuntimeError(
+            f"{method} {path} returned {status}, expected {expected_status}: {payload}"
+        )
     try:
         return status, json.loads(payload)
     except json.JSONDecodeError as error:
-        raise RuntimeError(f"{method} {path} returned non-JSON body: {payload}") from error
+        raise RuntimeError(
+            f"{method} {path} returned non-JSON body: {payload}"
+        ) from error
 
 
 def wait_for_ready(base_url: str, process: subprocess.Popen[str]) -> None:
@@ -225,7 +256,9 @@ def table_schema() -> dict[str, Any]:
     }
 
 
-def record(record_id: str, body: str, status: str, embedding: list[float]) -> dict[str, Any]:
+def record(
+    record_id: str, body: str, status: str, embedding: list[float]
+) -> dict[str, Any]:
     return {
         "table": "docs",
         "id": record_id,
@@ -261,7 +294,9 @@ def error_envelope_scenario(base_url: str) -> dict[str, Any]:
         expected_status=400,
     )
     if not isinstance(payload.get("error"), str):
-        raise RuntimeError(f"expected JSON error envelope with string error field, got {payload}")
+        raise RuntimeError(
+            f"expected JSON error envelope with string error field, got {payload}"
+        )
     return passed(
         "errors",
         "current JSON error envelope",
@@ -293,7 +328,9 @@ def traceql_string_execution_scenario(base_url: str) -> dict[str, Any]:
     if "intro" not in result_ids:
         raise RuntimeError(f"TraceQL did not return expected record intro: {payload}")
     if "explain" in payload:
-        raise RuntimeError(f"TraceQL response should be lean without EXPLAIN: {payload}")
+        raise RuntimeError(
+            f"TraceQL response should be lean without EXPLAIN: {payload}"
+        )
 
     _, explain_payload = request_json(
         base_url,
@@ -305,7 +342,9 @@ def traceql_string_execution_scenario(base_url: str) -> dict[str, Any]:
         explain_payload.get("explain"),
         dict,
     ):
-        raise RuntimeError(f"TraceQL EXPLAIN response missing results or explain: {explain_payload}")
+        raise RuntimeError(
+            f"TraceQL EXPLAIN response missing results or explain: {explain_payload}"
+        )
 
     invalid_status, invalid_payload = request_json(
         base_url,
@@ -318,7 +357,9 @@ def traceql_string_execution_scenario(base_url: str) -> dict[str, Any]:
     if invalid_payload.get("code") != "bad_request" or not (
         isinstance(error, str) and "invalid TraceQL" in error
     ):
-        raise RuntimeError(f"invalid TraceQL did not preserve bad-request envelope: {invalid_payload}")
+        raise RuntimeError(
+            f"invalid TraceQL did not preserve bad-request envelope: {invalid_payload}"
+        )
 
     return passed(
         "traceql_string_execution",
@@ -336,7 +377,14 @@ def json_compact(value: dict[str, Any]) -> str:
     return json.dumps(value, sort_keys=True, separators=(",", ":"))
 
 
-def traceql_command(base_url: str, command: str, payload: dict[str, Any] | None = None, *, headers: dict[str, str] | None = None, expected_status: int = 200) -> tuple[int, dict[str, Any]]:
+def traceql_command(
+    base_url: str,
+    command: str,
+    payload: dict[str, Any] | None = None,
+    *,
+    headers: dict[str, str] | None = None,
+    expected_status: int = 200,
+) -> tuple[int, dict[str, Any]]:
     body = command if payload is None else f"{command} {json_compact(payload)}"
     return request_json(
         base_url,
@@ -381,9 +429,13 @@ def graphql_data(payload: dict[str, Any], field: str) -> dict[str, Any]:
     return data[field]
 
 
-def traceql_native_surface_report(manifest: dict[str, Any], base_url: str, admin_dir: Path) -> dict[str, Any]:
+def traceql_native_surface_report(
+    manifest: dict[str, Any], base_url: str, admin_dir: Path
+) -> dict[str, Any]:
     scenarios: dict[str, dict[str, Any]] = {}
-    intro = record("intro", "TraceDB native TraceQL conformance", "draft", [1.0, 0.0, 0.0])
+    intro = record(
+        "intro", "TraceDB native TraceQL conformance", "draft", [1.0, 0.0, 0.0]
+    )
     intro_changed = record(
         "intro",
         "TraceDB native TraceQL conformance changed",
@@ -399,14 +451,29 @@ def traceql_native_surface_report(manifest: dict[str, Any], base_url: str, admin
 
     run_step(
         "schema_apply",
-        lambda: passed("schema_apply", "TraceQL SCHEMA APPLY", {"epoch": traceql_command(base_url, "SCHEMA APPLY", table_schema())[1]["epoch"]}),
+        lambda: passed(
+            "schema_apply",
+            "TraceQL SCHEMA APPLY",
+            {
+                "epoch": traceql_command(base_url, "SCHEMA APPLY", table_schema())[1][
+                    "epoch"
+                ]
+            },
+        ),
     )
     run_step(
         "put",
         lambda: passed(
             "put",
             "TraceQL PUT",
-            {"epoch": traceql_command(base_url, "PUT", intro, headers={"Idempotency-Key": "traceql-put-intro"})[1]["epoch"]},
+            {
+                "epoch": traceql_command(
+                    base_url,
+                    "PUT",
+                    intro,
+                    headers={"Idempotency-Key": "traceql-put-intro"},
+                )[1]["epoch"]
+            },
         ),
     )
     run_step(
@@ -420,8 +487,18 @@ def traceql_native_surface_report(manifest: dict[str, Any], base_url: str, admin
                     "BATCH",
                     {
                         "records": [
-                            record("sdk", "TraceDB native TraceQL SDK conformance", "published", [0.8, 0.2, 0.0]),
-                            record("ops", "TraceDB native TraceQL snapshot restore", "published", [0.0, 1.0, 0.0]),
+                            record(
+                                "sdk",
+                                "TraceDB native TraceQL SDK conformance",
+                                "published",
+                                [0.8, 0.2, 0.0],
+                            ),
+                            record(
+                                "ops",
+                                "TraceDB native TraceQL snapshot restore",
+                                "published",
+                                [0.0, 1.0, 0.0],
+                            ),
                         ]
                     },
                     headers={"Idempotency-Key": "traceql-batch"},
@@ -438,7 +515,12 @@ def traceql_native_surface_report(manifest: dict[str, Any], base_url: str, admin
                 "epoch": traceql_command(
                     base_url,
                     "PATCH",
-                    {"table": "docs", "tenant_id": "tenant-a", "id": "intro", "fields": {"status": "reviewed"}},
+                    {
+                        "table": "docs",
+                        "tenant_id": "tenant-a",
+                        "id": "intro",
+                        "fields": {"status": "reviewed"},
+                    },
                     headers={"Idempotency-Key": "traceql-patch"},
                 )[1]["epoch"]
             },
@@ -477,7 +559,13 @@ def traceql_native_surface_report(manifest: dict[str, Any], base_url: str, admin
         lambda: passed(
             "query",
             "TraceQL QUERY command",
-            {"result_count": len(traceql_command(base_url, "QUERY", query_body(explain=True))[1]["results"])},
+            {
+                "result_count": len(
+                    traceql_command(base_url, "QUERY", query_body(explain=True))[1][
+                        "results"
+                    ]
+                )
+            },
         ),
     )
     run_step(
@@ -507,7 +595,12 @@ def traceql_native_surface_report(manifest: dict[str, Any], base_url: str, admin
                 "deleted": traceql_command(
                     base_url,
                     "DELETE",
-                    {"table": "docs", "tenant_id": "tenant-a", "id": "ops", "tombstone": "platform_conformance"},
+                    {
+                        "table": "docs",
+                        "tenant_id": "tenant-a",
+                        "id": "ops",
+                        "tombstone": "platform_conformance",
+                    },
                     headers={"Idempotency-Key": "traceql-delete"},
                 )[1]["deleted"],
                 "hidden": traceql_command(
@@ -592,9 +685,13 @@ def traceql_native_surface_report(manifest: dict[str, Any], base_url: str, admin
     )
 
 
-def graphql_native_surface_report(manifest: dict[str, Any], base_url: str, admin_dir: Path) -> dict[str, Any]:
+def graphql_native_surface_report(
+    manifest: dict[str, Any], base_url: str, admin_dir: Path
+) -> dict[str, Any]:
     scenarios: dict[str, dict[str, Any]] = {}
-    intro = record("intro", "TraceDB native GraphQL conformance", "draft", [1.0, 0.0, 0.0])
+    intro = record(
+        "intro", "TraceDB native GraphQL conformance", "draft", [1.0, 0.0, 0.0]
+    )
     intro_changed = record(
         "intro",
         "TraceDB native GraphQL conformance changed",
@@ -613,7 +710,18 @@ def graphql_native_surface_report(manifest: dict[str, Any], base_url: str, admin
 
     run_step(
         "schema_apply",
-        lambda: passed("schema_apply", "GraphQL schemaApply", {"epoch": data("schemaApply", graphql_operation(base_url, "schemaApply", table_schema(), selection="{ epoch }")[1])["epoch"]}),
+        lambda: passed(
+            "schema_apply",
+            "GraphQL schemaApply",
+            {
+                "epoch": data(
+                    "schemaApply",
+                    graphql_operation(
+                        base_url, "schemaApply", table_schema(), selection="{ epoch }"
+                    )[1],
+                )["epoch"]
+            },
+        ),
     )
     run_step(
         "put",
@@ -647,8 +755,18 @@ def graphql_native_surface_report(manifest: dict[str, Any], base_url: str, admin
                         "batch",
                         {
                             "records": [
-                                record("sdk", "TraceDB native GraphQL SDK conformance", "published", [0.8, 0.2, 0.0]),
-                                record("ops", "TraceDB native GraphQL snapshot restore", "published", [0.0, 1.0, 0.0]),
+                                record(
+                                    "sdk",
+                                    "TraceDB native GraphQL SDK conformance",
+                                    "published",
+                                    [0.8, 0.2, 0.0],
+                                ),
+                                record(
+                                    "ops",
+                                    "TraceDB native GraphQL snapshot restore",
+                                    "published",
+                                    [0.0, 1.0, 0.0],
+                                ),
                             ]
                         },
                         selection="{ record_count }",
@@ -669,7 +787,12 @@ def graphql_native_surface_report(manifest: dict[str, Any], base_url: str, admin
                     graphql_operation(
                         base_url,
                         "patch",
-                        {"table": "docs", "tenant_id": "tenant-a", "id": "intro", "fields": {"status": "reviewed"}},
+                        {
+                            "table": "docs",
+                            "tenant_id": "tenant-a",
+                            "id": "intro",
+                            "fields": {"status": "reviewed"},
+                        },
                         selection="{ epoch }",
                         headers={"Idempotency-Key": "graphql-patch"},
                     )[1],
@@ -738,7 +861,19 @@ def graphql_native_surface_report(manifest: dict[str, Any], base_url: str, admin
         lambda: passed(
             "traceql_string_execution",
             "GraphQL query operation parity with TraceQL scenario",
-            {"result_count": len(data("query", graphql_operation(base_url, "query", query_body(explain=True), selection="{ results explain }")[1])["results"])},
+            {
+                "result_count": len(
+                    data(
+                        "query",
+                        graphql_operation(
+                            base_url,
+                            "query",
+                            query_body(explain=True),
+                            selection="{ results explain }",
+                        )[1],
+                    )["results"]
+                )
+            },
         ),
     )
     run_step(
@@ -770,7 +905,12 @@ def graphql_native_surface_report(manifest: dict[str, Any], base_url: str, admin
                     graphql_operation(
                         base_url,
                         "delete",
-                        {"table": "docs", "tenant_id": "tenant-a", "id": "ops", "tombstone": "platform_conformance"},
+                        {
+                            "table": "docs",
+                            "tenant_id": "tenant-a",
+                            "id": "ops",
+                            "tombstone": "platform_conformance",
+                        },
                         selection="{ deleted }",
                         headers={"Idempotency-Key": "graphql-delete"},
                     )[1],
@@ -896,9 +1036,13 @@ def traceql_sqlish_conformance_summary(base_url: str) -> dict[str, Any]:
         raise RuntimeError(f"SQL-ish TraceQL response missing results list: {payload}")
     result_ids = [row.get("record_id") for row in results if isinstance(row, dict)]
     if "intro" not in result_ids:
-        raise RuntimeError(f"SQL-ish TraceQL did not return expected record intro: {payload}")
+        raise RuntimeError(
+            f"SQL-ish TraceQL did not return expected record intro: {payload}"
+        )
     if "explain" in payload:
-        raise RuntimeError(f"SQL-ish SELECT response should be lean without EXPLAIN: {payload}")
+        raise RuntimeError(
+            f"SQL-ish SELECT response should be lean without EXPLAIN: {payload}"
+        )
     steps["sqlish_select"] = True
 
     _, explain_payload = request_json(
@@ -912,7 +1056,9 @@ def traceql_sqlish_conformance_summary(base_url: str) -> dict[str, Any]:
         explain_payload.get("explain"),
         dict,
     ):
-        raise RuntimeError(f"SQL-ish EXPLAIN response missing results or explain: {explain_payload}")
+        raise RuntimeError(
+            f"SQL-ish EXPLAIN response missing results or explain: {explain_payload}"
+        )
     steps["sqlish_explain"] = True
 
     invalid_status, invalid_payload = request_json(
@@ -921,7 +1067,7 @@ def traceql_sqlish_conformance_summary(base_url: str) -> dict[str, Any]:
         "/v1/traceql",
         {
             "query": (
-                'SELECT * FROM docs JOIN users ON docs.user_id = users.id '
+                "SELECT * FROM docs JOIN users ON docs.user_id = users.id "
                 'WHERE tenant_id = "tenant-a"'
             )
         },
@@ -932,7 +1078,9 @@ def traceql_sqlish_conformance_summary(base_url: str) -> dict[str, Any]:
     if invalid_payload.get("code") != "bad_request" or not (
         isinstance(invalid_error, str) and "SQL-ish" in invalid_error
     ):
-        raise RuntimeError(f"invalid SQL-ish did not preserve bad-request envelope: {invalid_payload}")
+        raise RuntimeError(
+            f"invalid SQL-ish did not preserve bad-request envelope: {invalid_payload}"
+        )
     steps["invalid_sqlish"] = True
 
     return {
@@ -974,12 +1122,21 @@ def graphql_http_conformance_summary(base_url: str) -> dict[str, Any]:
     ]
     if schema_payload.get("adapter") != "bounded_graphql_query_adapter":
         raise RuntimeError(f"GraphQL schema adapter marker missing: {schema_payload}")
-    if schema_payload.get("execution") != "POST /v1/graphql/bounded returns TraceDB QueryResponse; POST /v1/graphql returns GraphQL data/errors":
+    if (
+        schema_payload.get("execution")
+        != "POST /v1/graphql/bounded returns TraceDB QueryResponse; POST /v1/graphql returns GraphQL data/errors"
+    ):
         raise RuntimeError(f"GraphQL schema execution field missing: {schema_payload}")
     if not isinstance(schema_tables, list) or "docs" not in schema_tables:
-        raise RuntimeError(f"GraphQL schema response missing docs table: {schema_payload}")
-    if not isinstance(schema_sdl, str) or any(token not in schema_sdl for token in schema_tokens):
-        raise RuntimeError(f"GraphQL schema SDL missing required tokens: {schema_payload}")
+        raise RuntimeError(
+            f"GraphQL schema response missing docs table: {schema_payload}"
+        )
+    if not isinstance(schema_sdl, str) or any(
+        token not in schema_sdl for token in schema_tokens
+    ):
+        raise RuntimeError(
+            f"GraphQL schema SDL missing required tokens: {schema_payload}"
+        )
     steps["graphql_schema"] = True
 
     graphql_query = (
@@ -987,7 +1144,9 @@ def graphql_http_conformance_summary(base_url: str) -> dict[str, Any]:
         'match: "TraceDB", near: [1.0, 0.0, 0.0], freshness: ALLOW_DIRTY, '
         "limit: 3) { record_id } }"
     )
-    _, payload = request_json(base_url, "POST", "/v1/graphql/bounded", {"query": graphql_query})
+    _, payload = request_json(
+        base_url, "POST", "/v1/graphql/bounded", {"query": graphql_query}
+    )
     results = payload.get("results")
     if not isinstance(results, list):
         raise RuntimeError(f"GraphQL response missing results list: {payload}")
@@ -995,7 +1154,9 @@ def graphql_http_conformance_summary(base_url: str) -> dict[str, Any]:
     if "intro" not in result_ids:
         raise RuntimeError(f"GraphQL did not return expected record intro: {payload}")
     if "explain" in payload:
-        raise RuntimeError(f"GraphQL query response should be lean without explain: {payload}")
+        raise RuntimeError(
+            f"GraphQL query response should be lean without explain: {payload}"
+        )
     steps["graphql_query"] = True
 
     _, explain_payload = request_json(
@@ -1008,7 +1169,9 @@ def graphql_http_conformance_summary(base_url: str) -> dict[str, Any]:
         explain_payload.get("explain"),
         dict,
     ):
-        raise RuntimeError(f"GraphQL explain response missing results or explain: {explain_payload}")
+        raise RuntimeError(
+            f"GraphQL explain response missing results or explain: {explain_payload}"
+        )
     steps["graphql_explain"] = True
 
     invalid_status, invalid_payload = request_json(
@@ -1022,7 +1185,9 @@ def graphql_http_conformance_summary(base_url: str) -> dict[str, Any]:
     if invalid_payload.get("code") != "bad_request" or not (
         isinstance(invalid_error, str) and "invalid GraphQL adapter" in invalid_error
     ):
-        raise RuntimeError(f"invalid GraphQL did not preserve bad-request envelope: {invalid_payload}")
+        raise RuntimeError(
+            f"invalid GraphQL did not preserve bad-request envelope: {invalid_payload}"
+        )
     steps["invalid_graphql"] = True
 
     return {
@@ -1040,7 +1205,9 @@ def graphql_http_conformance_summary(base_url: str) -> dict[str, Any]:
     }
 
 
-def run_http_direct_surface(manifest: dict[str, Any], repo_root: Path) -> dict[str, Any]:
+def run_http_direct_surface(
+    manifest: dict[str, Any], repo_root: Path
+) -> dict[str, Any]:
     scenarios: dict[str, dict[str, Any]] = {}
     with tempfile.TemporaryDirectory(prefix="tracedb-http-conformance-") as temp_dir:
         temp = Path(temp_dir)
@@ -1078,7 +1245,9 @@ def run_http_direct_surface(manifest: dict[str, Any], repo_root: Path) -> dict[s
                     scenarios[scenario_id] = failed(scenario_id, error)
 
             schema = table_schema()
-            intro = record("intro", "TraceDB direct HTTP conformance", "draft", [1.0, 0.0, 0.0])
+            intro = record(
+                "intro", "TraceDB direct HTTP conformance", "draft", [1.0, 0.0, 0.0]
+            )
             intro_changed = record(
                 "intro",
                 "TraceDB direct HTTP conformance changed",
@@ -1091,7 +1260,11 @@ def run_http_direct_surface(manifest: dict[str, Any], repo_root: Path) -> dict[s
                 lambda: passed(
                     "schema_apply",
                     "POST /v1/schema/apply",
-                    {"epoch": request_json(base_url, "POST", "/v1/schema/apply", schema)[1]["epoch"]},
+                    {
+                        "epoch": request_json(
+                            base_url, "POST", "/v1/schema/apply", schema
+                        )[1]["epoch"]
+                    },
                 ),
             )
             run_step(
@@ -1122,8 +1295,18 @@ def run_http_direct_surface(manifest: dict[str, Any], repo_root: Path) -> dict[s
                             "/v1/records/put-batch",
                             {
                                 "records": [
-                                    record("sdk", "TraceDB SDK conformance", "published", [0.8, 0.2, 0.0]),
-                                    record("ops", "TraceDB snapshot restore", "published", [0.0, 1.0, 0.0]),
+                                    record(
+                                        "sdk",
+                                        "TraceDB SDK conformance",
+                                        "published",
+                                        [0.8, 0.2, 0.0],
+                                    ),
+                                    record(
+                                        "ops",
+                                        "TraceDB snapshot restore",
+                                        "published",
+                                        [0.0, 1.0, 0.0],
+                                    ),
                                 ]
                             },
                             headers={"Idempotency-Key": "http-direct-batch"},
@@ -1189,9 +1372,9 @@ def run_http_direct_surface(manifest: dict[str, Any], repo_root: Path) -> dict[s
                     "POST /v1/query",
                     {
                         "result_count": len(
-                            request_json(base_url, "POST", "/v1/query", query_body(explain=True))[1][
-                                "results"
-                            ]
+                            request_json(
+                                base_url, "POST", "/v1/query", query_body(explain=True)
+                            )[1]["results"]
                         )
                     },
                 ),
@@ -1340,19 +1523,17 @@ def run_command(
     }
 
 
-def map_rust_sdk_product_summary(
+def map_rust_sdk_quickstart_summary(
     manifest: dict[str, Any],
-    product_summary: dict[str, Any],
+    quickstart: dict[str, Any],
 ) -> dict[str, Any]:
-    step = product_summary.get("steps", {}).get("rust_sdk_quickstart", {})
-    quickstart = step.get("summary", {})
     quickstart_steps = quickstart.get("steps", {})
     error_envelope = quickstart.get("error_envelope", {})
     records_put = quickstart.get("records_put")
     traceql_result_count = quickstart.get("traceql_result_count")
 
     def step_passed(name: str) -> bool:
-        return step.get("ok") is True and quickstart.get("ok") is True and quickstart_steps.get(name) is True
+        return quickstart.get("ok") is True and quickstart_steps.get(name) is True
 
     def error_envelope_passed() -> bool:
         return (
@@ -1367,14 +1548,20 @@ def map_rust_sdk_product_summary(
     scenario_map = {
         "schema_apply": passed("schema_apply", "rust_sdk_quickstart steps.schema_apply")
         if step_passed("schema_apply")
-        else failed("schema_apply", RuntimeError("Rust SDK quickstart schema_apply did not pass")),
+        else failed(
+            "schema_apply",
+            RuntimeError("Rust SDK quickstart schema_apply did not pass"),
+        ),
         "put": passed(
             "put",
             "rust_sdk_quickstart steps.put",
             {"records_put": records_put, "put_epoch": quickstart.get("put_epoch")},
         )
         if step_passed("put") and isinstance(records_put, int) and records_put >= 1
-        else failed("put", RuntimeError("Rust SDK quickstart single-record put evidence missing")),
+        else failed(
+            "put",
+            RuntimeError("Rust SDK quickstart single-record put evidence missing"),
+        ),
         "batch": passed(
             "batch",
             "rust_sdk_quickstart steps.batch_ingest and steps.row_batch_ingest",
@@ -1386,13 +1573,16 @@ def map_rust_sdk_product_summary(
         if step_passed("batch_ingest") and step_passed("row_batch_ingest")
         else failed(
             "batch",
-            RuntimeError("Rust SDK quickstart batch_ingest or row_batch_ingest did not pass"),
+            RuntimeError(
+                "Rust SDK quickstart batch_ingest or row_batch_ingest did not pass"
+            ),
         ),
         "patch": passed("patch", "rust_sdk_quickstart steps.patch")
         if step_passed("patch")
         else failed("patch", RuntimeError("Rust SDK quickstart patch did not pass")),
         "get": passed("get", "rust_sdk_quickstart patched get and deleted get checks")
-        if quickstart.get("patched_status") == "reviewed" and quickstart.get("deleted_hidden") is True
+        if quickstart.get("patched_status") == "reviewed"
+        and quickstart.get("deleted_hidden") is True
         else failed("get", RuntimeError("Rust SDK quickstart get evidence missing")),
         "scan": passed("scan", "rust_sdk_quickstart steps.scan")
         if step_passed("scan")
@@ -1414,23 +1604,43 @@ def map_rust_sdk_product_summary(
         and quickstart.get("traceql_explain") is True
         else failed(
             "traceql_string_execution",
-            RuntimeError("Rust SDK quickstart TraceQL string execution evidence missing"),
+            RuntimeError(
+                "Rust SDK quickstart TraceQL string execution evidence missing"
+            ),
         ),
         "explain": passed("explain", "rust_sdk_quickstart steps.explain")
         if step_passed("explain")
-        else failed("explain", RuntimeError("Rust SDK quickstart explain did not pass")),
-        "delete": passed("delete", "rust_sdk_quickstart steps.delete and deleted_hidden")
+        else failed(
+            "explain", RuntimeError("Rust SDK quickstart explain did not pass")
+        ),
+        "delete": passed(
+            "delete", "rust_sdk_quickstart steps.delete and deleted_hidden"
+        )
         if step_passed("delete") and quickstart.get("deleted_hidden") is True
         else failed("delete", RuntimeError("Rust SDK quickstart delete did not pass")),
         "idempotency": passed("idempotency", "rust_sdk_quickstart idempotency_keys")
-        if quickstart.get("idempotency_keys") is True and quickstart.get("idempotency_retries", 0) >= 1
-        else failed("idempotency", RuntimeError("Rust SDK quickstart idempotency evidence missing")),
-        "errors": passed("errors", "rust_sdk_quickstart error_envelope", dict(error_envelope))
+        if quickstart.get("idempotency_keys") is True
+        and quickstart.get("idempotency_retries", 0) >= 1
+        else failed(
+            "idempotency",
+            RuntimeError("Rust SDK quickstart idempotency evidence missing"),
+        ),
+        "errors": passed(
+            "errors", "rust_sdk_quickstart error_envelope", dict(error_envelope)
+        )
         if error_envelope_passed()
-        else failed("errors", RuntimeError("Rust SDK quickstart error envelope evidence missing")),
-        "snapshot_restore": passed("snapshot_restore", "rust_sdk_quickstart admin snapshot/restore")
+        else failed(
+            "errors",
+            RuntimeError("Rust SDK quickstart error envelope evidence missing"),
+        ),
+        "snapshot_restore": passed(
+            "snapshot_restore", "rust_sdk_quickstart admin snapshot/restore"
+        )
         if step_passed("snapshot") and step_passed("restore")
-        else failed("snapshot_restore", RuntimeError("Rust SDK quickstart snapshot/restore did not pass")),
+        else failed(
+            "snapshot_restore",
+            RuntimeError("Rust SDK quickstart snapshot/restore did not pass"),
+        ),
     }
     scenarios = ordered_surface_scenarios(
         manifest,
@@ -1441,7 +1651,7 @@ def map_rust_sdk_product_summary(
         "rust_sdk",
         "checked",
         scenarios,
-        evidence=["cargo run -q -p tracedb-cli -- product-regression --only rust_sdk_quickstart"],
+        evidence=[RUST_SDK_CONFORMANCE_EVIDENCE],
     )
 
 
@@ -1469,21 +1679,30 @@ def map_python_sdk_smoke_summary(
     scenario_map = {
         "schema_apply": passed("schema_apply", "python sdk smoke steps.schema_apply")
         if step_passed("schema_apply")
-        else failed("schema_apply", RuntimeError("Python SDK smoke schema_apply did not pass")),
+        else failed(
+            "schema_apply", RuntimeError("Python SDK smoke schema_apply did not pass")
+        ),
         "put": passed(
             "put",
             "python sdk smoke steps.put",
-            {"records_put": smoke_summary.get("records_put"), "put_epoch": smoke_summary.get("put_epoch")},
+            {
+                "records_put": smoke_summary.get("records_put"),
+                "put_epoch": smoke_summary.get("put_epoch"),
+            },
         )
         if step_passed("put") and smoke_summary.get("records_put") == 1
-        else failed("put", RuntimeError("Python SDK smoke single-record put evidence missing")),
+        else failed(
+            "put", RuntimeError("Python SDK smoke single-record put evidence missing")
+        ),
         "batch": passed(
             "batch",
             "python sdk smoke steps.batch_ingest",
             {"records_inserted": smoke_summary.get("records_inserted")},
         )
         if step_passed("batch_ingest")
-        else failed("batch", RuntimeError("Python SDK smoke batch_ingest did not pass")),
+        else failed(
+            "batch", RuntimeError("Python SDK smoke batch_ingest did not pass")
+        ),
         "patch": passed("patch", "python sdk smoke steps.patch")
         if step_passed("patch")
         else failed("patch", RuntimeError("Python SDK smoke patch did not pass")),
@@ -1530,14 +1749,26 @@ def map_python_sdk_smoke_summary(
                 "conflict_status": smoke_summary.get("idempotency_conflict_status"),
             },
         )
-        if step_passed("idempotency") and smoke_summary.get("idempotency_conflict_status") == 409
-        else failed("idempotency", RuntimeError("Python SDK smoke idempotency evidence missing")),
-        "errors": passed("errors", "python sdk smoke error_envelope", dict(error_envelope))
+        if step_passed("idempotency")
+        and smoke_summary.get("idempotency_conflict_status") == 409
+        else failed(
+            "idempotency", RuntimeError("Python SDK smoke idempotency evidence missing")
+        ),
+        "errors": passed(
+            "errors", "python sdk smoke error_envelope", dict(error_envelope)
+        )
         if error_envelope_passed()
-        else failed("errors", RuntimeError("Python SDK smoke error envelope evidence missing")),
-        "snapshot_restore": passed("snapshot_restore", "python sdk smoke admin snapshot/restore")
+        else failed(
+            "errors", RuntimeError("Python SDK smoke error envelope evidence missing")
+        ),
+        "snapshot_restore": passed(
+            "snapshot_restore", "python sdk smoke admin snapshot/restore"
+        )
         if step_passed("snapshot") and step_passed("restore")
-        else failed("snapshot_restore", RuntimeError("Python SDK smoke snapshot/restore did not pass")),
+        else failed(
+            "snapshot_restore",
+            RuntimeError("Python SDK smoke snapshot/restore did not pass"),
+        ),
     }
     scenarios = ordered_surface_scenarios(
         manifest,
@@ -1574,27 +1805,42 @@ def map_typescript_sdk_smoke_summary(
         )
 
     scenario_map = {
-        "schema_apply": passed("schema_apply", "typescript public sdk smoke steps.schema_apply")
+        "schema_apply": passed(
+            "schema_apply", "typescript public sdk smoke steps.schema_apply"
+        )
         if step_passed("schema_apply")
-        else failed("schema_apply", RuntimeError("TypeScript SDK smoke schema_apply did not pass")),
+        else failed(
+            "schema_apply",
+            RuntimeError("TypeScript SDK smoke schema_apply did not pass"),
+        ),
         "put": passed(
             "put",
             "typescript public sdk smoke steps.put",
-            {"records_put": smoke_summary.get("records_put"), "put_epoch": smoke_summary.get("put_epoch")},
+            {
+                "records_put": smoke_summary.get("records_put"),
+                "put_epoch": smoke_summary.get("put_epoch"),
+            },
         )
         if step_passed("put") and smoke_summary.get("records_put") == 1
-        else failed("put", RuntimeError("TypeScript SDK smoke single-record put evidence missing")),
+        else failed(
+            "put",
+            RuntimeError("TypeScript SDK smoke single-record put evidence missing"),
+        ),
         "batch": passed(
             "batch",
             "typescript public sdk smoke steps.batch_ingest",
             {"records_inserted": smoke_summary.get("records_inserted")},
         )
         if step_passed("batch_ingest")
-        else failed("batch", RuntimeError("TypeScript SDK smoke batch_ingest did not pass")),
+        else failed(
+            "batch", RuntimeError("TypeScript SDK smoke batch_ingest did not pass")
+        ),
         "patch": passed("patch", "typescript public sdk smoke steps.patch")
         if step_passed("patch")
         else failed("patch", RuntimeError("TypeScript SDK smoke patch did not pass")),
-        "get": passed("get", "typescript public sdk smoke patched get and deleted get checks")
+        "get": passed(
+            "get", "typescript public sdk smoke patched get and deleted get checks"
+        )
         if step_passed("get") and smoke_summary.get("patched_status") == "reviewed"
         else failed("get", RuntimeError("TypeScript SDK smoke get evidence missing")),
         "scan": passed(
@@ -1621,12 +1867,18 @@ def map_typescript_sdk_smoke_summary(
         and smoke_summary.get("traceql_explain") is True
         else failed(
             "traceql_string_execution",
-            RuntimeError("TypeScript SDK smoke TraceQL string execution evidence missing"),
+            RuntimeError(
+                "TypeScript SDK smoke TraceQL string execution evidence missing"
+            ),
         ),
         "explain": passed("explain", "typescript public sdk smoke steps.explain")
         if step_passed("explain")
-        else failed("explain", RuntimeError("TypeScript SDK smoke explain did not pass")),
-        "delete": passed("delete", "typescript public sdk smoke steps.delete and deleted_hidden")
+        else failed(
+            "explain", RuntimeError("TypeScript SDK smoke explain did not pass")
+        ),
+        "delete": passed(
+            "delete", "typescript public sdk smoke steps.delete and deleted_hidden"
+        )
         if step_passed("delete") and smoke_summary.get("deleted_hidden") is True
         else failed("delete", RuntimeError("TypeScript SDK smoke delete did not pass")),
         "idempotency": passed(
@@ -1640,13 +1892,26 @@ def map_typescript_sdk_smoke_summary(
         if step_passed("idempotency")
         and smoke_summary.get("idempotency_replay_observed") is True
         and smoke_summary.get("idempotency_conflict_status") == 409
-        else failed("idempotency", RuntimeError("TypeScript SDK smoke idempotency evidence missing")),
-        "errors": passed("errors", "typescript public sdk smoke error_envelope", dict(error_envelope))
+        else failed(
+            "idempotency",
+            RuntimeError("TypeScript SDK smoke idempotency evidence missing"),
+        ),
+        "errors": passed(
+            "errors", "typescript public sdk smoke error_envelope", dict(error_envelope)
+        )
         if error_envelope_passed()
-        else failed("errors", RuntimeError("TypeScript SDK smoke error envelope evidence missing")),
-        "snapshot_restore": passed("snapshot_restore", "typescript public sdk smoke admin snapshot/restore")
+        else failed(
+            "errors",
+            RuntimeError("TypeScript SDK smoke error envelope evidence missing"),
+        ),
+        "snapshot_restore": passed(
+            "snapshot_restore", "typescript public sdk smoke admin snapshot/restore"
+        )
         if step_passed("snapshot") and step_passed("restore")
-        else failed("snapshot_restore", RuntimeError("TypeScript SDK smoke snapshot/restore did not pass")),
+        else failed(
+            "snapshot_restore",
+            RuntimeError("TypeScript SDK smoke snapshot/restore did not pass"),
+        ),
     }
     scenarios = ordered_surface_scenarios(
         manifest,
@@ -1673,10 +1938,17 @@ def map_traceql_sqlish_summary(
         return smoke_summary.get("ok") is True and steps.get(name) is True
 
     def select_passed() -> bool:
-        return step_passed("sqlish_select") and isinstance(result_ids, list) and "intro" in result_ids
+        return (
+            step_passed("sqlish_select")
+            and isinstance(result_ids, list)
+            and "intro" in result_ids
+        )
 
     def explain_passed() -> bool:
-        return step_passed("sqlish_explain") and smoke_summary.get("sqlish_explain") is True
+        return (
+            step_passed("sqlish_explain")
+            and smoke_summary.get("sqlish_explain") is True
+        )
 
     def invalid_sqlish_passed() -> bool:
         return (
@@ -1695,7 +1967,9 @@ def map_traceql_sqlish_summary(
     scenario_map = {
         "query": passed("query", TRACEQL_SQLISH_CONFORMANCE_EVIDENCE, sqlish_details)
         if select_passed()
-        else failed("query", RuntimeError("SQL-ish SELECT did not return expected intro record")),
+        else failed(
+            "query", RuntimeError("SQL-ish SELECT did not return expected intro record")
+        ),
         "traceql_string_execution": passed(
             "traceql_string_execution",
             TRACEQL_SQLISH_CONFORMANCE_EVIDENCE,
@@ -1723,7 +1997,9 @@ def map_traceql_sqlish_summary(
             },
         )
         if invalid_sqlish_passed()
-        else failed("errors", RuntimeError("invalid SQL-ish error envelope evidence missing")),
+        else failed(
+            "errors", RuntimeError("invalid SQL-ish error envelope evidence missing")
+        ),
     }
     scenarios = ordered_surface_scenarios(
         manifest,
@@ -1756,7 +2032,11 @@ def map_graphql_http_summary(
         return smoke_summary.get("ok") is True and steps.get(name) is True
 
     def query_passed() -> bool:
-        return step_passed("graphql_query") and isinstance(result_ids, list) and "intro" in result_ids
+        return (
+            step_passed("graphql_query")
+            and isinstance(result_ids, list)
+            and "intro" in result_ids
+        )
 
     def schema_passed() -> bool:
         return (
@@ -1768,7 +2048,10 @@ def map_graphql_http_summary(
         )
 
     def explain_passed() -> bool:
-        return step_passed("graphql_explain") and smoke_summary.get("graphql_explain") is True
+        return (
+            step_passed("graphql_explain")
+            and smoke_summary.get("graphql_explain") is True
+        )
 
     def invalid_graphql_passed() -> bool:
         return (
@@ -1786,14 +2069,19 @@ def map_graphql_http_summary(
             {"tables": schema_tables, "tokens": schema_tokens},
         )
         if schema_passed()
-        else failed("schema_apply", RuntimeError("GraphQL generated SDL did not reflect applied schema")),
+        else failed(
+            "schema_apply",
+            RuntimeError("GraphQL generated SDL did not reflect applied schema"),
+        ),
         "query": passed(
             "query",
             GRAPHQL_HTTP_CONFORMANCE_EVIDENCE,
             {"result_ids": result_ids},
         )
         if query_passed()
-        else failed("query", RuntimeError("GraphQL query did not return expected intro record")),
+        else failed(
+            "query", RuntimeError("GraphQL query did not return expected intro record")
+        ),
         "explain": passed(
             "explain",
             "POST /v1/graphql with explain: true",
@@ -1811,7 +2099,9 @@ def map_graphql_http_summary(
             },
         )
         if invalid_graphql_passed()
-        else failed("errors", RuntimeError("invalid GraphQL error envelope evidence missing")),
+        else failed(
+            "errors", RuntimeError("invalid GraphQL error envelope evidence missing")
+        ),
     }
     scenarios = ordered_surface_scenarios(
         manifest,
@@ -1831,24 +2121,86 @@ def map_graphql_http_summary(
     )
 
 
+def standalone_sdk_repo(repo_root: Path, env_var: str, fallback_name: str) -> Path:
+    override = os.environ.get(env_var, "").strip()
+    if override:
+        return Path(override).expanduser().resolve()
+    return (repo_root.parent / fallback_name).resolve()
+
+
+def sdk_repo_not_found_report(
+    manifest: dict[str, Any],
+    surface_id: str,
+    repo_path: Path,
+    env_var: str,
+) -> dict[str, Any]:
+    return empty_surface_report(
+        manifest,
+        surface_id,
+        "not_run",
+        f"standalone SDK repo not found at {repo_path}; set {env_var} to override",
+    )
+
+
 def run_rust_sdk_surface(manifest: dict[str, Any], repo_root: Path) -> dict[str, Any]:
+    env_var, fallback_name = SDK_SURFACE_REPOS["rust_sdk"]
+    sdk_repo = standalone_sdk_repo(repo_root, env_var, fallback_name)
+    if not sdk_repo.exists():
+        return sdk_repo_not_found_report(manifest, "rust_sdk", sdk_repo, env_var)
     with tempfile.TemporaryDirectory(prefix="tracedb-rust-sdk-conformance-") as temp_dir:
-        command = run_command(
-            [
-                "cargo",
-                "run",
-                "-q",
-                "-p",
-                "tracedb-cli",
-                "--",
-                "product-regression",
-                "--only",
-                "rust_sdk_quickstart",
-                "--data-root",
-                temp_dir,
-            ],
-            repo_root,
+        temp = Path(temp_dir)
+        data_dir = temp / "data"
+        admin_dir = temp / "admin"
+        admin_dir.mkdir(parents=True, exist_ok=True)
+        bind = f"127.0.0.1:{free_port()}"
+        base_url = f"http://{bind}"
+        env = os.environ.copy()
+        env.update(
+            {
+                "TRACEDB_BIND": bind,
+                "TRACEDB_DATA_DIR": str(data_dir),
+                "TRACEDB_SERVICE_MODE": "engine",
+                "CARGO_TERM_COLOR": "never",
+                "CARGO_INCREMENTAL": "0",
+            }
         )
+        process = subprocess.Popen(
+            ["cargo", "run", "-q", "-p", "tracedb-server"],
+            cwd=repo_root,
+            env=env,
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+        )
+        try:
+            wait_for_ready(base_url, process)
+            command = run_command(
+                [
+                    "cargo",
+                    "run",
+                    "-q",
+                    "--example",
+                    "quickstart",
+                    "--",
+                    "--url",
+                    base_url,
+                    "--token",
+                    "dev-token",
+                    "--timeout-ms",
+                    "5000",
+                    "--safe-retries",
+                    "1",
+                    "--idempotency-retries",
+                    "1",
+                    "--admin-dir",
+                    str(admin_dir),
+                ],
+                sdk_repo,
+                env_extra={"TRACEDB_CORE_REPO": str(repo_root)},
+            )
+        finally:
+            stop_process(process)
     if not command["ok"]:
         return finalize_surface(
             "rust_sdk",
@@ -1857,24 +2209,43 @@ def run_rust_sdk_surface(manifest: dict[str, Any], repo_root: Path) -> dict[str,
                 scenario_result(
                     scenario_id,
                     "failed",
-                    reason=f"rust_sdk product-regression failed: {command['stderr_tail']}",
+                    reason=(
+                        "rust_sdk standalone quickstart failed: "
+                        f"stdout={command['stdout'][-12_000:]} stderr={command['stderr_tail']}"
+                    ),
                 )
                 for scenario_id in contract_scenario_ids(manifest)
             ],
-            evidence=[json.dumps({"command": command["argv"], "returncode": command["returncode"]})],
+            evidence=[
+                json.dumps(
+                    {"command": command["argv"], "returncode": command["returncode"]}
+                )
+            ],
         )
-    product_summary = json.loads(command["stdout"])
-    surface = map_rust_sdk_product_summary(manifest, product_summary)
+    quickstart_summary = json.loads(command["stdout"])
+    surface = map_rust_sdk_quickstart_summary(manifest, quickstart_summary)
     surface["command"] = {
         "argv": command["argv"],
+        "cwd": str(sdk_repo),
+        "env": {"TRACEDB_CORE_REPO": str(repo_root)},
         "duration_s": command["duration_s"],
         "returncode": command["returncode"],
     }
     return surface
 
 
-def run_typescript_sdk_surface(manifest: dict[str, Any], repo_root: Path) -> dict[str, Any]:
-    with tempfile.TemporaryDirectory(prefix="tracedb-typescript-sdk-conformance-") as temp_dir:
+def run_typescript_sdk_surface(
+    manifest: dict[str, Any], repo_root: Path
+) -> dict[str, Any]:
+    env_var, fallback_name = SDK_SURFACE_REPOS["typescript_sdk"]
+    sdk_repo = standalone_sdk_repo(repo_root, env_var, fallback_name)
+    if not sdk_repo.exists():
+        return sdk_repo_not_found_report(
+            manifest, "typescript_sdk", sdk_repo, env_var
+        )
+    with tempfile.TemporaryDirectory(
+        prefix="tracedb-typescript-sdk-conformance-"
+    ) as temp_dir:
         summary_path = Path(temp_dir) / "typescript-sdk-smoke.json"
         command = run_command(
             [
@@ -1885,7 +2256,8 @@ def run_typescript_sdk_surface(manifest: dict[str, Any], repo_root: Path) -> dic
                 "--summary-json",
                 str(summary_path),
             ],
-            repo_root / "clients" / "typescript",
+            sdk_repo,
+            env_extra={"TRACEDB_CORE_REPO": str(repo_root)},
         )
         if not command["ok"]:
             return finalize_surface(
@@ -1902,28 +2274,31 @@ def run_typescript_sdk_surface(manifest: dict[str, Any], repo_root: Path) -> dic
                     )
                     for scenario_id in contract_scenario_ids(manifest)
                 ],
-                evidence=[json.dumps({"command": command["argv"], "returncode": command["returncode"]})],
+                evidence=[
+                    json.dumps(
+                        {
+                            "command": command["argv"],
+                            "returncode": command["returncode"],
+                        }
+                    )
+                ],
             )
         smoke_summary = json.loads(summary_path.read_text())
     surface = map_typescript_sdk_smoke_summary(manifest, smoke_summary)
     surface["command"] = {
         "argv": command["argv"],
-        "cwd": str(repo_root / "clients" / "typescript"),
+        "cwd": str(sdk_repo),
+        "env": {"TRACEDB_CORE_REPO": str(repo_root)},
         "duration_s": command["duration_s"],
         "returncode": command["returncode"],
     }
     return surface
 
 
-def install_python_sdk_package_for_conformance(repo_root: Path, temp_dir: Path) -> tuple[Path, dict[str, Any]]:
-    source_dir = repo_root / "clients" / "python"
-    package_dir = temp_dir / "python-sdk-package"
+def install_python_sdk_package_for_conformance(
+    source_dir: Path, temp_dir: Path
+) -> tuple[Path, dict[str, Any]]:
     target_dir = temp_dir / "python-sdk-site"
-    shutil.copytree(
-        source_dir,
-        package_dir,
-        ignore=shutil.ignore_patterns("build", "*.egg-info", "__pycache__"),
-    )
     command = run_command(
         [
             sys.executable,
@@ -1934,7 +2309,7 @@ def install_python_sdk_package_for_conformance(repo_root: Path, temp_dir: Path) 
             "--no-deps",
             "--target",
             str(target_dir),
-            str(package_dir),
+            str(source_dir),
         ],
         temp_dir,
     )
@@ -1942,10 +2317,18 @@ def install_python_sdk_package_for_conformance(repo_root: Path, temp_dir: Path) 
 
 
 def run_python_sdk_surface(manifest: dict[str, Any], repo_root: Path) -> dict[str, Any]:
-    with tempfile.TemporaryDirectory(prefix="tracedb-python-sdk-conformance-") as temp_dir:
+    env_var, fallback_name = SDK_SURFACE_REPOS["python_sdk"]
+    sdk_repo = standalone_sdk_repo(repo_root, env_var, fallback_name)
+    if not sdk_repo.exists():
+        return sdk_repo_not_found_report(manifest, "python_sdk", sdk_repo, env_var)
+    with tempfile.TemporaryDirectory(
+        prefix="tracedb-python-sdk-conformance-"
+    ) as temp_dir:
         temp_path = Path(temp_dir)
         summary_path = Path(temp_dir) / "python-sdk-smoke.json"
-        target_dir, install_command = install_python_sdk_package_for_conformance(repo_root, temp_path)
+        target_dir, install_command = install_python_sdk_package_for_conformance(
+            sdk_repo, temp_path
+        )
         if not install_command["ok"]:
             return finalize_surface(
                 "python_sdk",
@@ -1963,20 +2346,26 @@ def run_python_sdk_surface(manifest: dict[str, Any], repo_root: Path) -> dict[st
                 ],
                 evidence=[
                     PYTHON_SDK_CONFORMANCE_EVIDENCE,
-                    json.dumps({"command": install_command["argv"], "returncode": install_command["returncode"]}),
+                    json.dumps(
+                        {
+                            "command": install_command["argv"],
+                            "returncode": install_command["returncode"],
+                        }
+                    ),
                 ],
             )
         command = run_command(
             [
                 sys.executable,
-                "clients/python/http_smoke.py",
+                str(sdk_repo / "http_smoke.py"),
                 "--summary-json",
                 str(summary_path),
             ],
-            repo_root,
+            sdk_repo,
             env_extra={
                 "PYTHONPATH": str(target_dir),
                 "TRACEDB_PYTHON_IMPORT_MODE": "installed",
+                "TRACEDB_CORE_REPO": str(repo_root),
             },
         )
         if not command["ok"]:
@@ -1996,8 +2385,18 @@ def run_python_sdk_surface(manifest: dict[str, Any], repo_root: Path) -> dict[st
                 ],
                 evidence=[
                     PYTHON_SDK_CONFORMANCE_EVIDENCE,
-                    json.dumps({"command": install_command["argv"], "returncode": install_command["returncode"]}),
-                    json.dumps({"command": command["argv"], "returncode": command["returncode"]}),
+                    json.dumps(
+                        {
+                            "command": install_command["argv"],
+                            "returncode": install_command["returncode"],
+                        }
+                    ),
+                    json.dumps(
+                        {
+                            "command": command["argv"],
+                            "returncode": command["returncode"],
+                        }
+                    ),
                 ],
             )
         smoke_summary = json.loads(summary_path.read_text())
@@ -2012,6 +2411,7 @@ def run_python_sdk_surface(manifest: dict[str, Any], repo_root: Path) -> dict[st
         "env": {
             "PYTHONPATH": str(target_dir),
             "TRACEDB_PYTHON_IMPORT_MODE": "installed",
+            "TRACEDB_CORE_REPO": str(repo_root),
         },
         "duration_s": command["duration_s"],
         "returncode": command["returncode"],
@@ -2019,8 +2419,12 @@ def run_python_sdk_surface(manifest: dict[str, Any], repo_root: Path) -> dict[st
     return surface
 
 
-def run_traceql_sqlish_surface(manifest: dict[str, Any], repo_root: Path) -> dict[str, Any]:
-    with tempfile.TemporaryDirectory(prefix="tracedb-traceql-sqlish-conformance-") as temp_dir:
+def run_traceql_sqlish_surface(
+    manifest: dict[str, Any], repo_root: Path
+) -> dict[str, Any]:
+    with tempfile.TemporaryDirectory(
+        prefix="tracedb-traceql-sqlish-conformance-"
+    ) as temp_dir:
         temp = Path(temp_dir)
         data_dir = temp / "data"
         bind = f"127.0.0.1:{free_port()}"
@@ -2074,7 +2478,10 @@ def run_traceql_sqlish_surface(manifest: dict[str, Any], repo_root: Path) -> dic
             return finalize_surface(
                 "traceql_sqlish",
                 "failed",
-                [failed(scenario_id, error) for scenario_id in contract_scenario_ids(manifest)],
+                [
+                    failed(scenario_id, error)
+                    for scenario_id in contract_scenario_ids(manifest)
+                ],
                 evidence=[TRACEQL_SQLISH_CONFORMANCE_EVIDENCE],
             )
         finally:
@@ -2117,7 +2524,10 @@ def run_traceql_surface(manifest: dict[str, Any], repo_root: Path) -> dict[str, 
             return finalize_surface(
                 "traceql",
                 "failed",
-                [failed(scenario_id, error) for scenario_id in contract_scenario_ids(manifest)],
+                [
+                    failed(scenario_id, error)
+                    for scenario_id in contract_scenario_ids(manifest)
+                ],
                 evidence=[TRACEQL_NATIVE_CONFORMANCE_EVIDENCE],
             )
         finally:
@@ -2158,14 +2568,19 @@ def run_graphql_surface(manifest: dict[str, Any], repo_root: Path) -> dict[str, 
             return finalize_surface(
                 "graphql",
                 "failed",
-                [failed(scenario_id, error) for scenario_id in contract_scenario_ids(manifest)],
+                [
+                    failed(scenario_id, error)
+                    for scenario_id in contract_scenario_ids(manifest)
+                ],
                 evidence=[GRAPHQL_NATIVE_CONFORMANCE_EVIDENCE],
             )
         finally:
             stop_process(process)
 
 
-def build_report(manifest: dict[str, Any], surfaces: list[dict[str, Any]]) -> dict[str, Any]:
+def build_report(
+    manifest: dict[str, Any], surfaces: list[dict[str, Any]]
+) -> dict[str, Any]:
     totals = {
         "surfaces": len(surfaces),
         "complete_surfaces": sum(1 for surface in surfaces if surface["complete"]),
@@ -2199,7 +2614,9 @@ def run_selected_surfaces(
 ) -> list[dict[str, Any]]:
     unknown = sorted(set(selected_surfaces) - set(contract_surface_ids(manifest)))
     if unknown:
-        raise ValueError(f"unknown platform conformance surface(s): {', '.join(unknown)}")
+        raise ValueError(
+            f"unknown platform conformance surface(s): {', '.join(unknown)}"
+        )
     surfaces = []
     for surface_id in selected_surfaces:
         if surface_id == "http_direct":
@@ -2229,16 +2646,20 @@ def run_selected_surfaces(
 
 
 def parse_args(argv: list[str]) -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Run TraceDB Platform Contract v0 conformance lanes.")
+    parser = argparse.ArgumentParser(
+        description="Run TraceDB Platform Contract v0 conformance lanes."
+    )
     parser.add_argument("--repo-root", default=str(REPO_ROOT))
     parser.add_argument("--contract", default=str(DEFAULT_CONTRACT))
     parser.add_argument(
         "--surface",
         action="append",
         dest="surfaces",
-        help="Surface id to run. Defaults to http_direct and rust_sdk.",
+        help="Surface id to run. Defaults to http_direct.",
     )
-    parser.add_argument("--summary-json", help="Optional path to write the JSON report.")
+    parser.add_argument(
+        "--summary-json", help="Optional path to write the JSON report."
+    )
     return parser.parse_args(argv)
 
 
@@ -2250,7 +2671,9 @@ def main(argv: list[str]) -> int:
         contract_path = repo_root / contract_path
     manifest = load_contract(contract_path)
     selected_surfaces = args.surfaces or DEFAULT_SURFACES
-    report = build_report(manifest, run_selected_surfaces(manifest, repo_root, selected_surfaces))
+    report = build_report(
+        manifest, run_selected_surfaces(manifest, repo_root, selected_surfaces)
+    )
     output = json.dumps(report, indent=2, sort_keys=True)
     print(output)
     if args.summary_json:
