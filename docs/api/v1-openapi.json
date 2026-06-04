@@ -2,7 +2,7 @@
   "components": {
     "schemas": {
       "AccessPathExplain": {
-        "additionalProperties": true,
+        "additionalProperties": false,
         "description": "Access path explain entry.",
         "properties": {
           "access_path_id": {
@@ -21,7 +21,7 @@
         "type": "object"
       },
       "AccessPathTiming": {
-        "additionalProperties": true,
+        "additionalProperties": false,
         "description": "Access path timing entry.",
         "properties": {
           "access_path_id": {
@@ -37,7 +37,7 @@
         "type": "object"
       },
       "AdminJob": {
-        "additionalProperties": true,
+        "additionalProperties": false,
         "description": "Admin job queue entry.",
         "properties": {
           "queue": {
@@ -50,7 +50,7 @@
         "type": "object"
       },
       "BranchSummary": {
-        "additionalProperties": true,
+        "additionalProperties": false,
         "description": "Branch catalog entry.",
         "properties": {
           "branch_id": {
@@ -78,7 +78,7 @@
         "type": "object"
       },
       "BranchesResponse": {
-        "additionalProperties": true,
+        "additionalProperties": false,
         "description": "Branch catalog response.",
         "properties": {
           "branches": {
@@ -94,7 +94,7 @@
         "type": "object"
       },
       "Candidate": {
-        "additionalProperties": true,
+        "additionalProperties": false,
         "description": "Planner candidate explain row.",
         "properties": {
           "freshness": {
@@ -125,7 +125,7 @@
         "type": "object"
       },
       "CompactResponse": {
-        "additionalProperties": true,
+        "additionalProperties": false,
         "description": "Compact response.",
         "properties": {
           "compacted": {
@@ -135,7 +135,7 @@
         "type": "object"
       },
       "DatabaseSummary": {
-        "additionalProperties": true,
+        "additionalProperties": false,
         "description": "Database catalog entry.",
         "properties": {
           "database_id": {
@@ -160,7 +160,7 @@
         "type": "object"
       },
       "DatabasesResponse": {
-        "additionalProperties": true,
+        "additionalProperties": false,
         "description": "Database catalog response.",
         "properties": {
           "databases": {
@@ -179,7 +179,7 @@
         "type": "object"
       },
       "DeleteResponse": {
-        "additionalProperties": true,
+        "additionalProperties": false,
         "description": "Delete response.",
         "properties": {
           "deleted": {
@@ -197,7 +197,7 @@
         "type": "object"
       },
       "EpochResponse": {
-        "additionalProperties": true,
+        "additionalProperties": false,
         "description": "Epoch allocation response.",
         "properties": {
           "epoch": {
@@ -207,7 +207,7 @@
         "type": "object"
       },
       "ErrorResponse": {
-        "additionalProperties": true,
+        "additionalProperties": false,
         "description": "Error response.",
         "properties": {
           "code": {
@@ -221,7 +221,7 @@
         "type": "object"
       },
       "GetRecordResponse": {
-        "additionalProperties": true,
+        "additionalProperties": false,
         "description": "Get record response.",
         "properties": {
           "record": {
@@ -238,12 +238,17 @@
         "type": "object"
       },
       "GraphQlError": {
-        "additionalProperties": true,
+        "additionalProperties": false,
         "description": "GraphQL error entry.",
         "properties": {
           "extensions": {
             "additionalProperties": true,
             "description": "GraphQL error extensions.",
+            "properties": {
+              "code": {
+                "type": "string"
+              }
+            },
             "type": "object"
           },
           "message": {
@@ -280,7 +285,7 @@
         "type": "object"
       },
       "GraphQlResponse": {
-        "additionalProperties": true,
+        "additionalProperties": false,
         "description": "Native GraphQL response envelope.",
         "properties": {
           "data": {
@@ -298,7 +303,7 @@
         "type": "object"
       },
       "GraphQlSchemaResponse": {
-        "additionalProperties": true,
+        "additionalProperties": false,
         "description": "Bounded GraphQL adapter schema response.",
         "properties": {
           "adapter": {
@@ -320,7 +325,7 @@
         "type": "object"
       },
       "HealthResponse": {
-        "additionalProperties": true,
+        "additionalProperties": false,
         "description": "Health response.",
         "properties": {
           "catalog_databases": {
@@ -342,7 +347,7 @@
         "type": "object"
       },
       "HybridExplain": {
-        "additionalProperties": true,
+        "additionalProperties": false,
         "description": "Explain response.",
         "properties": {
           "access_path_timings": {
@@ -569,7 +574,7 @@
         "type": "object"
       },
       "HybridQueryRow": {
-        "additionalProperties": true,
+        "additionalProperties": false,
         "description": "Hybrid query result row.",
         "properties": {
           "fields": {
@@ -593,7 +598,7 @@
         "type": "object"
       },
       "HybridScoreComponents": {
-        "additionalProperties": true,
+        "additionalProperties": false,
         "description": "Hybrid query score components.",
         "properties": {
           "final_score": {
@@ -627,7 +632,7 @@
         "type": "object"
       },
       "JobsResponse": {
-        "additionalProperties": true,
+        "additionalProperties": false,
         "description": "Admin job queue response.",
         "properties": {
           "jobs": {
@@ -640,7 +645,7 @@
         "type": "object"
       },
       "MetricsResponse": {
-        "additionalProperties": true,
+        "additionalProperties": false,
         "description": "Public-safe metrics response.",
         "properties": {
           "durable_epoch": {
@@ -683,7 +688,7 @@
         "type": "object"
       },
       "PutBatchResponse": {
-        "additionalProperties": true,
+        "additionalProperties": false,
         "description": "Batch write response.",
         "properties": {
           "epoch": {
@@ -693,7 +698,9 @@
             "type": "integer"
           },
           "write_timing": {
-            "additionalProperties": true,
+            "additionalProperties": {
+              "type": "number"
+            },
             "description": "Optional write timing attribution.",
             "type": "object"
           }
@@ -701,7 +708,7 @@
         "type": "object"
       },
       "QueryPhaseTiming": {
-        "additionalProperties": true,
+        "additionalProperties": false,
         "description": "Query phase timing entry.",
         "properties": {
           "elapsed_ms": {
@@ -714,7 +721,7 @@
         "type": "object"
       },
       "QueryResponse": {
-        "additionalProperties": true,
+        "additionalProperties": false,
         "description": "Query response.",
         "properties": {
           "explain": {
@@ -736,7 +743,7 @@
         "type": "object"
       },
       "ReadyResponse": {
-        "additionalProperties": true,
+        "additionalProperties": false,
         "description": "Readiness response.",
         "properties": {
           "catalog_databases": {
@@ -835,7 +842,7 @@
         "type": "object"
       },
       "RecordOutput": {
-        "additionalProperties": true,
+        "additionalProperties": false,
         "description": "TraceDB visible record output.",
         "properties": {
           "fields": {
@@ -917,7 +924,7 @@
         "type": "object"
       },
       "RecordScanOutput": {
-        "additionalProperties": true,
+        "additionalProperties": false,
         "description": "Scan output.",
         "properties": {
           "next_cursor": {
@@ -979,7 +986,7 @@
         "type": "object"
       },
       "RestoreResponse": {
-        "additionalProperties": true,
+        "additionalProperties": false,
         "description": "Restore response.",
         "properties": {
           "restored": {
@@ -998,7 +1005,7 @@
         "type": "object"
       },
       "RestoreVerification": {
-        "additionalProperties": true,
+        "additionalProperties": false,
         "description": "Optional restored-target record verification.",
         "properties": {
           "record": {
@@ -1038,7 +1045,7 @@
         "type": "object"
       },
       "SnapshotResponse": {
-        "additionalProperties": true,
+        "additionalProperties": false,
         "description": "Snapshot response.",
         "properties": {
           "snapshot": {
@@ -1247,6 +1254,26 @@
       "get": {
         "description": "Current TraceDB v1 product route. This OpenAPI artifact is generated from the checked-in route manifest.",
         "operationId": "getAdminJobs",
+        "parameters": [
+          {
+            "description": "Canonical managed-routing database identifier for bodyless routes. SDKs must use this parameter name (not db_id, databaseId, or similar variants) so all SDKs target the same gateway routing key.",
+            "in": "query",
+            "name": "database_id",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Canonical managed-routing branch identifier for bodyless routes. SDKs must use this parameter name (not br_id, branchId, or similar variants) so all SDKs target the same gateway routing key.",
+            "in": "query",
+            "name": "branch_id",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "content": {
@@ -2351,7 +2378,8 @@
     },
     "/v1/insert": {
       "post": {
-        "description": "Current TraceDB v1 product route. This OpenAPI artifact is generated from the checked-in route manifest.",
+        "deprecated": true,
+        "description": "Deprecated. Use POST /v1/records/put instead. This route remains for backwards compatibility and will be removed in a future release.",
         "operationId": "postInsert",
         "parameters": [
           {

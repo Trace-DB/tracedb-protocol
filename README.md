@@ -30,5 +30,5 @@ Local checks:
 ```bash
 python3 -m json.tool docs/platform-contract-v0.json >/dev/null
 python3 scripts/platform_conformance.py --help
-python3 ../tracedb/scripts/validate_protocol_locks.py --repo-root ..
+python3 scripts/validate_protocol_locks.py --repo-root ..
 ```
