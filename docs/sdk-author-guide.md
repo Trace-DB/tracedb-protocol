@@ -217,11 +217,34 @@ The following are the primary endpoints:
 
 ### Gateway-Only: Bodyless Admin Routes
 
-The `GET /v1/admin/jobs` route does not have a JSON body. For gateway
-diagnostics, the gateway receives `database_id` and `branch_id` as query
-metadata before proxying to the engine. SDKs should handle this by sending
-the metadata as query parameters or headers when configured for managed
-routing (implementation-specific).
+The following GET routes do not have a JSON body, so managed routing
+metadata cannot be injected into the request body:
+
+| Method | Route |
+| --- | --- |
+| `GET` | `/v1/admin/jobs` |
+
+For these bodyless routes, SDKs must send managed routing metadata as
+query parameters using the following canonical names:
+
+| Parameter | Type | Description |
+| --- | --- | --- |
+| `database_id` | `string` | Canonical managed-routing database identifier |
+| `branch_id` | `string` | Canonical managed-routing branch identifier |
+
+SDKs **must** use these exact parameter names (not `db_id`, `databaseId`,
+`br_id`, `branchId`, or any other variant) so that all SDKs target the
+same gateway routing key. These names match the field names used in JSON
+POST body injection (`database_id` and `branch_id`) for consistency
+across body and bodyless routes.
+
+When `database_id` is configured and the route is bodyless:
+
+1. Append `database_id` as a query parameter.
+2. If `branch_id` is configured, append `branch_id` as a query parameter.
+3. If `database_id` is configured but `branch_id` is not, default
+   `branch_id` to `<database_id>:main` and append it as a query parameter.
+4. Never override query parameters that the caller has already explicitly set.
 
 ### Configuration via Environment
 

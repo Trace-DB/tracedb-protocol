@@ -5,127 +5,201 @@ tags:
   - durability
   - idempotency
   - wal
+  - platform-contract
 status: contract-freeze
 type: durability-boundary
-updated: 2026-06-02
+updated: 2026-06-03
 ---
 
 # TraceDB Durability Semantics v0
 
-This document defines the current durability boundary for TraceDB v0. It is
-referenced by `docs/platform-contract-v0.md` and applies to the local-engine
-path described by `docs/api/v1-http.md`. Managed-cloud durability semantics
-are future work.
+This document states what the current TraceDB local engine does and does not
+guarantee. It is a diligence boundary for the development-stage product, not a
+managed-service SLA.
 
-## Idempotency Keys
+## Scope
 
-TraceDB supports `Idempotency-Key` on mutation, admin, and polymorphic native
-operation routes. The idempotency authority is local-engine-only and scoped to
-the same data directory.
+TraceDB v0 durability applies to the local-first, single-process engine opened
+from one data directory. The HTTP server and gateway routes use that engine
+state; the gateway forwards product routes but does not add replication,
+consensus, managed-cloud backup/DR, or stronger write durability.
 
-### Behavior
+The current contract assumes one active writer per data directory. Multiple
+long-lived engine handles, multiple processes writing the same directory, or
+distributed replicas are outside v0.
 
-- Same key plus same method, path, and raw body replays the first successful
-  response.
-- Same key with a different raw body returns `409 Conflict`.
-- Replay survives a clean engine reopen from the same data directory.
+## Durable Artifacts
 
-### Routes That Accept Idempotency-Key
+The local data directory contains the durability contract:
 
-| Route | Category |
-| --- | --- |
-| `POST /v1/schema/apply` | mutation |
-| `POST /v1/records/put` | mutation |
-| `POST /v1/records/put-batch` | mutation |
-| `POST /v1/records/patch` | mutation |
-| `POST /v1/records/delete` | mutation |
-| `POST /v1/traceql` (mutating commands) | polymorphic native |
-| `POST /v1/graphql` (mutating root fields) | polymorphic native |
-| `POST /v1/admin/compact` | admin |
-| `POST /v1/admin/snapshot` | admin |
-| `POST /v1/admin/restore` | admin |
+- `manifest.tdb` stores database identity, branch identity, schemas, latest
+  epoch, durable epoch, checkpoint epoch, manifest generation, module metadata,
+  segment/index metadata, and a manifest checksum. Manifest writes rotate the
+  previous manifest to `manifest.tdb.bak`, recompute the checksum, write a
+  temporary file, sync that file, rename it into place, and sync the parent
+  directory.
+- `wal/000001.twal` stores WAL commit frames. Each mutation/admin state change
+  that modifies engine records or schema is appended as a committed frame before
+  the manifest advances. The append path writes the frame and calls
+  `file.sync_data()`.
+- WAL commit frames include magic, format version, LSN, previous payload
+  checksum, payload length, payload checksum, JSON commit payload, a committed
+  footer, and the commit marker inside the payload. The previous checksum forms
+  a chain across frames.
+- `checkpoints/checkpoint-<epoch>.tchk` stores framed checkpoint payloads with a
+  magic prefix, payload checksum, schemas, records, and checkpoint epoch.
+- `segments/`, `indexes/`, `hot/`, and `jobs/` are copied by snapshot/backup
+  helpers as part of the current local data directory shape.
+- `engine.lock` is opened with a process-wide exclusive file lock during engine
+  open. A second active process using the same data directory fails fast instead
+  of writing concurrently.
+- `engine.write.lock` serializes TraceDB engine write sections. `000001.twal.lock`
+  serializes WAL appends. Both are create-new lock files that are removed when
+  their guards drop.
+- `IdempotencyReceipt` entries for supported mutation/admin routes are stored
+  in WAL commit frames and checkpoint payloads. On open, the server rebuilds
+  its in-memory replay cache from those receipts; there is no separate durable
+  `http-idempotency-cache.json` authority.
 
-## WAL Behavior
+## Transparent Data Encryption
 
-The Write-Ahead Log (WAL) is the primary durability mechanism. Every mutation
-and schema change is appended to the WAL before it becomes visible to reads.
+When `TRACEDB_MASTER_KEY_B64` or `TraceDbOpenOptions` provides a 32-byte root
+key, TraceDB creates a per-database data encryption key and stores wrapped DEK
+metadata in `manifest.tdb`. The manifest remains plaintext metadata; WAL
+payloads, framed v3 checkpoints, segment objects, and index artifacts are
+encrypted when written under that configured TDE context.
 
-### Guarantees
+Wrong-key and missing-key opens fail closed for encrypted data. Legacy
+plaintext WAL, checkpoint, and segment artifacts remain readable and are not
+rewritten merely by opening with TDE configured. New WAL/checkpoint/segment/index
+artifacts written after TDE is configured are encrypted. WAL/checkpoint-backed
+idempotency receipts inherit the same artifact behavior as the frames that
+carry them.
 
-- Writes are durable once the WAL entry is flushed to disk and the engine
-  acknowledges the epoch.
-- On a clean reopen from the same data directory, all committed WAL entries
-  are replayed, restoring the last known state.
-- Idempotency receipts are backed by WAL/checkpoint state and survive replays.
+## Recovery Semantics
 
-### Limitations
+On open, TraceDB creates the data-directory layout, acquires `engine.lock`, reads
+`manifest.tdb`, checks the manifest checksum, opens the WAL, and scans committed
+WAL frames. If
+`manifest.checkpoint_epoch` is nonzero, the engine reads the matching
+checkpoint first, checks the checkpoint frame/checksum, and rebuilds visible
+records from that checkpoint. It then replays WAL commits whose epoch is greater
+than the checkpoint epoch.
 
-- Not cross-replica: this is single-instance local durability.
-- Not crash-atomic exactly-once: a crash during WAL flush may leave the last
-  entry in an indeterminate state (committed or lost, never partial).
-- Not a managed-cloud exactly-once guarantee: this is local data-dir replay
-  from WAL/checkpoint-backed idempotency receipts only.
+If WAL replay finds committed records beyond `manifest.latest_epoch`, open
+advances `latest_epoch`, `durable_epoch`, and manifest generation, then rewrites
+the manifest. This lets a successfully appended WAL commit recover even if the
+manifest advance did not finish.
 
-## Snapshot Semantics
+The WAL scanner treats a torn WAL tail as recoverable only when the incomplete
+data is at the tail:
 
-Snapshots are local filesystem operations controlled by the admin routes:
+- short header
+- short payload
+- missing commit footer
 
-- `POST /v1/admin/snapshot` creates a point-in-time snapshot of the current
-  data directory state at the given target path.
-- `POST /v1/admin/restore` restores from a previously created snapshot into
-  a target data directory, optionally verifying a specific record.
+In those cases, committed frames before the torn tail are replayed and the torn
+tail is reported through engine recovery metadata. The incomplete tail frame is
+not applied.
 
-### Guarantees
+The scanner treats these conditions as hard corruption, not best-effort replay:
 
-- A snapshot captures all WAL-committed state visible at the time of the
-  snapshot call.
-- Restore produces a data directory that passes the same product-regression
-  gate as the original.
+- invalid WAL magic
+- unsupported WAL version or frame kind
+- previous checksum mismatch
+- oversized payload
+- payload checksum mismatch
+- commit footer mismatch
+- missing commit marker
+- invalid parent epoch
+- previous commit hash mismatch
 
-### Limitations
+Manifest corruption first attempts the rotated `manifest.tdb.bak` fallback.
+If both the current manifest and backup are unusable, missing manifest checksum,
+manifest checksum mismatch, checkpoint epoch greater than latest epoch,
+checkpoint epoch mismatch, missing checkpoint checksum, checkpoint checksum
+mismatch, unsupported checkpoint format, and checkpoint parse failure stop open
+instead of silently repairing state.
 
-- Snapshots are local filesystem artifacts. They are not encrypted at rest
-  unless the data directory itself is TDE-protected.
-- Cross-machine snapshot portability is not guaranteed; snapshots are tied
-  to the engine version and platform that created them.
-- No incremental snapshot or streaming backup protocol exists.
+## Snapshot And Restore
 
-## Lock-File Semantics
+`POST /v1/admin/snapshot` and `TraceDb::create_snapshot` copy the current local
+data directory into a target directory. Snapshot copies `manifest.tdb`,
+`engine.lock`, `wal`, `hot`, `segments`, `indexes`, `checkpoints`, and `jobs`.
+The target must not be the same directory as the source.
 
-The engine uses a lock file in the data directory to prevent concurrent access
-from multiple engine instances. The durability-faults gate validates stale-lock
-recovery behavior.
+`POST /v1/admin/restore` and `TraceDb::restore_snapshot` restore by copying a
+snapshot source directory into a separate target directory, then opening the
+target as a TraceDB data directory. Restore removes an existing target directory
+before copying. The copy-path guard rejects identical source and target paths
+and rejects target paths inside the source tree; source and target directories
+must differ. The route-level error text is `source and target directories must differ`.
 
-## TDE (Transparent Data Encryption)
+Snapshots are local filesystem copies. The v0 snapshot API is intended for
+local scratch/admin workflows and Railway lab checks. It is not managed-cloud
+backup/DR, cross-region restore, point-in-time recovery across many WAL files,
+or a replacement for operator-managed backups.
 
-When configured, TDE protects local artifacts (WAL, manifest, checkpoints,
-snapshots) at rest. The current scope is `local_artifacts_when_configured`.
-Key management and rotation are not yet part of the contract.
+Snapshot and restore route handlers run through the async engine handle with
+bounded admin work. That avoids request-path global mutex blocking for health,
+readiness, and metrics, but it does not make external filesystem mutation safe
+and does not coordinate with another process writing the same data directory.
 
-## Acknowledged Limitations
+## Idempotency Semantics
 
-The following are explicitly **not** part of the v0 durability contract:
+Supported HTTP mutation/admin routes accept `Idempotency-Key`. For the same
+method, path, key, and request body, the server returns the cached successful
+response. If the same method, path, and key are reused with a different request
+body, the server returns `409` with code `idempotency_conflict`.
 
-1. **Cross-replica replication.** No replica failover, leader election, or
-   consensus protocol exists.
-2. **Crash-atomic exactly-once semantics.** The idempotency boundary is
-   replay-from-receipt, not hardware-level atomicity.
-3. **Managed-cloud durability.** Cloud storage backends, geo-replication,
-   and managed backup/restore are not implemented.
-4. **Point-in-time recovery.** No WAL archiving or time-travel recovery
-   beyond the last snapshot exists.
-5. **Durable job API.** Admin jobs (compaction, indexing) are visible as
-   queue state but do not have a durable job execution contract.
+The replay authority is local-engine-only and WAL/checkpoint-backed. Mutation
+routes embed receipts in the mutation WAL commit; successful admin responses
+record a receipt-only WAL entry. Receipts are scoped by method, path, key, body
+hash, actor tenant, database, branch, and token identity. They are not cross-replica,
+not shared across independent data directories, not a managed-cloud exactly-once
+guarantee, and not crash-atomic exactly-once across
+all failure points.
 
-## Verification
+SDK idempotency retries remain opt-in and only apply to mutation/admin requests
+that carry a caller-provided idempotency key.
 
-The local durability evidence gate:
+## Known Non-Guarantees
 
-```bash
-cargo run -p tracedb-cli -- durability-faults
-```
+TraceDB v0 does not yet claim:
 
-Covers: wrong/missing master key, torn WAL tail, manifest/checkpoint
-corruption, stale-lock recovery, encrypted snapshot restore, and WAL
-idempotency replay after reopen. This is local durability evidence, not
-managed-cloud backup/DR evidence.
+- distributed consensus or replication
+- multi-process active writer support on the same data directory
+- cross-replica idempotency
+- cross-replica exactly-once semantics
+- crash-atomic exactly-once semantics
+- managed-cloud backup/DR semantics
+- SQL/PostgreSQL durability semantics
+- managed service RPO/RTO
+- online snapshot isolation against external filesystem mutation
+- production web-server behavior, TLS, HTTP/2, or proxy-hardening semantics
+
+Stale PID lock files for `engine.write.lock` and `000001.twal.lock` are
+best-effort recovered after explicit owner checks. Active-owner locks,
+invalid-owner lock files, timeout cases, or ambiguous process ownership still
+require operator judgment instead of blind removal.
+
+## Operator Checks
+
+For a local or Railway lab run, use these checks before making durability
+claims:
+
+- Run the platform/product gate that covers schema, writes, reads, query,
+  delete, idempotency, snapshot, and restore for the surface under test.
+- Inspect `manifest.tdb` and WAL metadata through existing CLI/HTTP diagnostics
+  when debugging recovery.
+- After any restart/redeploy, write a marker before restart and read it after
+  restart through the same product surface.
+- After snapshot/restore, verify a known marker record from the restored target.
+- Inspect `engine.write.lock` and `000001.twal.lock` errors carefully: stale
+  dead-PID locks should recover, while active/invalid-owner cases remain
+  operator-visible safety stops.
+- Run `cargo run -p tracedb-cli -- durability-faults` for the local durability
+  receipt at `target/tracedb/durability-faults.json`.
+- Keep exported performance or durability claims separate from internal-only
+  development evidence unless the Railway/Modal gate and backup receipt are
+  present for that run.
