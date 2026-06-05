@@ -16,9 +16,8 @@ One logical record. One commit epoch. Many native views. No external sync
 drift. Explain every candidate.
 
 This document tracks the current TraceDB `v1` HTTP product surface exposed by
-`tracedb-server` and allowed through `tracedb-gateway`. It is a working local
-API reference, not a managed-cloud SLA, not a benchmark claim, and not a SQL
-compatibility claim.
+`tracedb-server`. It is a working local API reference, not a managed-cloud SLA,
+not a benchmark claim, and not a SQL compatibility claim.
 
 `platform-contract-v0` is the cross-surface contract name. It does not rename
 these HTTP routes: the wire API remains HTTP `/v1`, and this document plus
@@ -78,16 +77,15 @@ core product gate.
   is a separate opt-in policy for transient 5xx/timeout retries on mutating,
   admin, or polymorphic native operation routes and is only active when the
   individual request includes an `Idempotency-Key`.
-- Gateway metering, request logging, and rate limiting may still observe each
-  HTTP attempt.
+- Hosted TraceDB may add metering, request logging, rate limiting, and routing
+  outside this public protocol repository.
 
 ## Current HTTP Stack Boundary
 
-The current HTTP stack boundary is explicit: `tracedb-server` and
-`tracedb-gateway` default to Tokio/Axum product paths with Tower body limits,
-timeouts, load shedding, concurrency limits, graceful shutdown, structured
-JSON tracing, and private engine-token enforcement where configured. Engine
-mode uses an async handle with serialized writes/admin work and cheap read
+The current HTTP stack boundary is explicit: `tracedb-server` exposes the local
+engine HTTP product path with Tokio/Axum, Tower body limits, timeouts, load
+shedding, concurrency limits, graceful shutdown, and structured JSON tracing.
+It uses an async handle with serialized writes/admin work and cheap read
 snapshots, so health, readiness, and public-safe metrics do not wait behind
 long query execution.
 
