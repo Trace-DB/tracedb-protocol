@@ -256,7 +256,7 @@ specific contract version and revision:
 
 ```toml
 repo = "https://github.com/Trace-DB/tracedb-protocol"
-revision = "51c33f416918d4b31ae1c17b3321497d6114623e"
+revision = "<protocol-commit-sha>"
 contract = "platform-contract-v0"
 ```
 
