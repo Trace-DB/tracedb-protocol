@@ -299,6 +299,14 @@ def components() -> dict[str, Any]:
                 "Full replacement record write. The server also accepts RecordInput directly.",
                 {
                     "record": schema_ref("RecordInput"),
+                    "database_id": {
+                        "type": "string",
+                        "description": "Optional managed-routing database identifier injected by SDKs and gateways.",
+                    },
+                    "branch_id": {
+                        "type": "string",
+                        "description": "Optional managed-routing branch identifier injected by SDKs and gateways.",
+                    },
                 },
                 additional_properties=False,
             ),

@@ -914,6 +914,14 @@
         "additionalProperties": false,
         "description": "Full replacement record write. The server also accepts RecordInput directly.",
         "properties": {
+          "branch_id": {
+            "description": "Optional managed-routing branch identifier injected by SDKs and gateways.",
+            "type": "string"
+          },
+          "database_id": {
+            "description": "Optional managed-routing database identifier injected by SDKs and gateways.",
+            "type": "string"
+          },
           "record": {
             "$ref": "#/components/schemas/RecordInput"
           }
