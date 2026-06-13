@@ -300,6 +300,7 @@ def components() -> dict[str, Any]:
                 {
                     "record": schema_ref("RecordInput"),
                 },
+                additional_properties=False,
             ),
             "RecordPutBody": {
                 "description": "Full replacement record write body. The server accepts either RecordInput directly or a wrapper with record.",
@@ -399,7 +400,6 @@ def components() -> dict[str, Any]:
                     "query": {"type": "string"},
                     "variables": object_schema("GraphQL variables map."),
                     "operationName": {"type": "string"},
-                    "operation_name": {"type": "string"},
                 },
             ),
             "GraphQlError": object_schema(

@@ -270,9 +270,6 @@
           "operationName": {
             "type": "string"
           },
-          "operation_name": {
-            "type": "string"
-          },
           "query": {
             "type": "string"
           },
@@ -914,7 +911,7 @@
         ]
       },
       "RecordPutRequest": {
-        "additionalProperties": true,
+        "additionalProperties": false,
         "description": "Full replacement record write. The server also accepts RecordInput directly.",
         "properties": {
           "record": {
