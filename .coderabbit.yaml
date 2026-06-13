@@ -1,0 +1,34 @@
+language: en-US
+tone_instructions: "Be direct and prioritize contract drift, generated artifact drift, breaking API changes, and missing validation receipts."
+reviews:
+  profile: assertive
+  request_changes_workflow: true
+  auto_review:
+    enabled: true
+    base_branches:
+      - "main"
+      - "master"
+    drafts: false
+    ignore_title_keywords:
+      - "WIP"
+      - "DO NOT MERGE"
+  path_filters:
+    - "!**/*.lock"
+    - "!dist/**"
+    - "!target/**"
+  path_instructions:
+    - path: "docs/api/**"
+      instructions: |
+        Check OpenAPI and HTTP docs for route drift, schema drift, auth/security drift, retry/idempotency metadata, and native-vs-bounded GraphQL correctness.
+    - path: "scripts/**"
+      instructions: |
+        Check that generated artifacts remain deterministic and that validation scripts fail closed on contract drift.
+knowledge_base:
+  linear:
+    usage: "enabled"
+    team_keys:
+      - "TDB"
+chat:
+  integrations:
+    linear:
+      usage: "enabled"

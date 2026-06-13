@@ -1,0 +1,28 @@
+version: 2.1
+
+jobs:
+  tracedb-protocol:
+    docker:
+      - image: cimg/python:3.12
+    steps:
+      - checkout
+      - run:
+          name: Validate JSON artifacts
+          command: |
+            python -m json.tool docs/platform-contract-v0.json >/dev/null
+            python -m json.tool docs/api/v1-openapi.json >/dev/null
+      - run:
+          name: Check generated OpenAPI artifact
+          command: python scripts/generate_openapi_v1.py --check
+      - run:
+          name: Validate protocol lock
+          command: python scripts/validate_protocol_locks.py --repo-root . --skip-latest-check
+      - run:
+          name: Compile Python scripts
+          command: python -m py_compile scripts/generate_openapi_v1.py scripts/platform_conformance.py scripts/validate_protocol_locks.py
+
+workflows:
+  ci:
+    jobs:
+      - tracedb-protocol:
+          name: circleci/tracedb-protocol

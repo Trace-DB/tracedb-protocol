@@ -54,8 +54,8 @@ GRAPHQL_SCHEMA_CONFORMANCE_EVIDENCE = (
     "GET /v1/graphql/schema generated SDL from TableSchema"
 )
 GRAPHQL_HTTP_NOT_CHECKED_REASON = (
-    "GraphQL HTTP adapter surface only proves schema export/query/explain/error behavior; "
-    "write/admin scenarios remain HTTP/SDK surfaces; "
+    "Current GraphQL conformance lane only proves schema export/query/explain/error behavior; "
+    "native GraphQL write/admin root fields are implemented but not checked by this lane; "
     "this is not GraphQL resolver runtime or full adapter parity"
 )
 SERVER_READY_TIMEOUT_SECONDS = 120.0
