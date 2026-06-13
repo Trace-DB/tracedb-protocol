@@ -1018,6 +1018,22 @@ def validate_spec(spec: dict[str, Any]) -> None:
     if extensions.get("properties", {}).get("code", {}).get("type") != "string":
         errors.append("GraphQlError.extensions.code must be documented as a string")
 
+    gql_props = schemas["GraphQlQueryRequest"].get("properties", {})
+    if "operationName" not in gql_props:
+        errors.append("GraphQlQueryRequest must define properties.operationName")
+    if "operation_name" in gql_props:
+        errors.append("GraphQlQueryRequest must not define properties.operation_name")
+
+    record_put_request = schemas["RecordPutRequest"]
+    if record_put_request.get("additionalProperties") is not False:
+        errors.append("RecordPutRequest.additionalProperties must be false")
+    record_put_props = set(record_put_request.get("properties", {}).keys())
+    expected_record_put_props = {"record", "database_id", "branch_id"}
+    if record_put_props != expected_record_put_props:
+        errors.append(
+            "RecordPutRequest must define only record plus database_id/branch_id"
+        )
+
     insert_description = spec["paths"]["/v1/insert"]["post"]["description"]
     if "POST /v1/records/put" not in insert_description:
         errors.append("/v1/insert deprecation must point to POST /v1/records/put")
