@@ -289,16 +289,9 @@
         "description": "Native GraphQL response envelope.",
         "properties": {
           "data": {
-            "description": "GraphQL data object, or null when native GraphQL execution reports an error.",
-            "oneOf": [
-              {
-                "additionalProperties": true,
-                "type": "object"
-              },
-              {
-                "type": "null"
-              }
-            ]
+            "additionalProperties": true,
+            "description": "GraphQL data object.",
+            "type": "object"
           },
           "errors": {
             "items": {
