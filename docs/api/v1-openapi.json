@@ -900,15 +900,15 @@
         "type": "object"
       },
       "RecordPutBody": {
-        "description": "Full replacement record write body. The server accepts either RecordInput directly or a wrapper with record.",
-        "oneOf": [
+        "anyOf": [
           {
             "$ref": "#/components/schemas/RecordInput"
           },
           {
             "$ref": "#/components/schemas/RecordPutRequest"
           }
-        ]
+        ],
+        "description": "Full replacement record write body. The server accepts RecordInput directly or a wrapper with record and optional routing metadata."
       },
       "RecordPutRequest": {
         "additionalProperties": false,

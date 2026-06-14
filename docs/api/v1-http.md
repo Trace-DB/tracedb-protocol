@@ -136,12 +136,14 @@ are used in route method signatures. They are intentionally loose: the current
 HTTP API accepts additive JSON fields in several request and response shapes, so
 the generated aliases extend `JsonObject`, mark known fields optional, and leave
 domain enforcement to the server. The OpenAPI schema for
-`POST /v1/records/put` uses `RecordPutBody`, a `oneOf` union matching current
+`POST /v1/records/put` uses `RecordPutBody`, an `anyOf` union matching current
 server behavior: callers may send `RecordInput` directly or the wrapper
 `RecordPutRequest`. The wrapper branch is intentionally closed to arbitrary
 extra fields but explicitly allows `database_id` and `branch_id` so configured
 SDKs and gateways can inject managed-routing metadata without falling back to
-the raw `RecordInput` branch. No other wrapper-level fields are part of the
+the raw `RecordInput` branch. `anyOf` is required because the raw `RecordInput`
+schema is permissive for compatibility and can overlap with the wrapper shape
+under strict OpenAPI validators. No other wrapper-level fields are part of the
 contract; callers that relied on arbitrary wrapper keys must move those values
 inside `record.fields` or another documented record field before using generated
 SDK validators. `GetRecordResponse.record` references `RecordOutput | null`;

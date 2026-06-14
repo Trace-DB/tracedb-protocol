@@ -311,8 +311,8 @@ def components() -> dict[str, Any]:
                 additional_properties=False,
             ),
             "RecordPutBody": {
-                "description": "Full replacement record write body. The server accepts either RecordInput directly or a wrapper with record.",
-                "oneOf": [schema_ref("RecordInput"), schema_ref("RecordPutRequest")],
+                "description": "Full replacement record write body. The server accepts RecordInput directly or a wrapper with record and optional routing metadata.",
+                "anyOf": [schema_ref("RecordInput"), schema_ref("RecordPutRequest")],
             },
             "RecordPutBatchRequest": object_schema(
                 "Batch record write.",
@@ -1043,6 +1043,17 @@ def validate_spec(spec: dict[str, Any]) -> None:
     for routing_field in ("database_id", "branch_id"):
         if record_put_known_props.get(routing_field, {}).get("type") != "string":
             errors.append(f"RecordPutRequest.{routing_field} must be a string")
+    record_put_body = schemas["RecordPutBody"]
+    if "oneOf" in record_put_body:
+        errors.append("RecordPutBody must use anyOf, not oneOf")
+    record_put_body_refs = {
+        item.get("$ref") for item in record_put_body.get("anyOf", [])
+    }
+    if record_put_body_refs != {
+        "#/components/schemas/RecordInput",
+        "#/components/schemas/RecordPutRequest",
+    }:
+        errors.append("RecordPutBody.anyOf must include RecordInput and RecordPutRequest")
 
     insert_description = spec["paths"]["/v1/insert"]["post"]["description"]
     if "POST /v1/records/put" not in insert_description:
