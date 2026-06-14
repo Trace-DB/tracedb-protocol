@@ -215,6 +215,13 @@ The following are the primary endpoints:
 | `POST` | `/v1/admin/snapshot` | `SnapshotRequest` |
 | `POST` | `/v1/admin/restore` | `RestoreRequest` |
 
+For `POST /v1/records/put`, SDKs may inject managed-routing fields into either
+accepted body shape. The wrapped form is `{ "record": RecordInput,
+"database_id"?: string, "branch_id"?: string }`; it is closed to other
+wrapper-level fields so generated SDK validators preserve a stable method
+signature. Caller-specific data belongs inside the record payload, not next to
+`record`.
+
 ### Gateway-Only: Bodyless Admin Routes
 
 The following GET routes do not have a JSON body, so managed routing
