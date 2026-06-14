@@ -1023,16 +1023,26 @@ def validate_spec(spec: dict[str, Any]) -> None:
         errors.append("GraphQlQueryRequest must define properties.operationName")
     if "operation_name" in gql_props:
         errors.append("GraphQlQueryRequest must not define properties.operation_name")
+    if gql_props.get("operationName", {}).get("type") != "string":
+        errors.append("GraphQlQueryRequest.operationName must be a string")
 
     record_put_request = schemas["RecordPutRequest"]
     if record_put_request.get("additionalProperties") is not False:
         errors.append("RecordPutRequest.additionalProperties must be false")
-    record_put_props = set(record_put_request.get("properties", {}).keys())
+    record_put_known_props = record_put_request.get("properties", {})
+    record_put_props = set(record_put_known_props.keys())
     expected_record_put_props = {"record", "database_id", "branch_id"}
     if record_put_props != expected_record_put_props:
         errors.append(
             "RecordPutRequest must define only record plus database_id/branch_id"
         )
+    if record_put_known_props.get("record", {}).get("$ref") != (
+        "#/components/schemas/RecordInput"
+    ):
+        errors.append("RecordPutRequest.record must reference RecordInput")
+    for routing_field in ("database_id", "branch_id"):
+        if record_put_known_props.get(routing_field, {}).get("type") != "string":
+            errors.append(f"RecordPutRequest.{routing_field} must be a string")
 
     insert_description = spec["paths"]["/v1/insert"]["post"]["description"]
     if "POST /v1/records/put" not in insert_description:
