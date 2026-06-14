@@ -200,7 +200,7 @@ The following are the primary endpoints:
 | Method | Route | Body Type |
 | --- | --- | --- |
 | `POST` | `/v1/schema/apply` | `TableSchema` |
-| `POST` | `/v1/records/put` | `RecordInput` or `{ "record": RecordInput }` |
+| `POST` | `/v1/records/put` | `RecordInput` or `{ "record": RecordInput, "database_id"?: string, "branch_id"?: string }` |
 | `POST` | `/v1/records/put-batch` | `RecordPutBatchRequest` |
 | `POST` | `/v1/records/patch` | `RecordPatchRequest` |
 | `POST` | `/v1/records/delete` | `RecordDeleteRequest` |
