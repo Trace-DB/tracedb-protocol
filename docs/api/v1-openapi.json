@@ -270,9 +270,6 @@
           "operationName": {
             "type": "string"
           },
-          "operation_name": {
-            "type": "string"
-          },
           "query": {
             "type": "string"
           },
@@ -903,20 +900,28 @@
         "type": "object"
       },
       "RecordPutBody": {
-        "description": "Full replacement record write body. The server accepts either RecordInput directly or a wrapper with record.",
-        "oneOf": [
+        "anyOf": [
           {
             "$ref": "#/components/schemas/RecordInput"
           },
           {
             "$ref": "#/components/schemas/RecordPutRequest"
           }
-        ]
+        ],
+        "description": "Full replacement record write body. The server accepts RecordInput directly or a wrapper with record and optional routing metadata."
       },
       "RecordPutRequest": {
-        "additionalProperties": true,
+        "additionalProperties": false,
         "description": "Full replacement record write. The server also accepts RecordInput directly.",
         "properties": {
+          "branch_id": {
+            "description": "Optional managed-routing branch identifier injected by SDKs and gateways.",
+            "type": "string"
+          },
+          "database_id": {
+            "description": "Optional managed-routing database identifier injected by SDKs and gateways.",
+            "type": "string"
+          },
           "record": {
             "$ref": "#/components/schemas/RecordInput"
           }

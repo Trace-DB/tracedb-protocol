@@ -136,9 +136,17 @@ are used in route method signatures. They are intentionally loose: the current
 HTTP API accepts additive JSON fields in several request and response shapes, so
 the generated aliases extend `JsonObject`, mark known fields optional, and leave
 domain enforcement to the server. The OpenAPI schema for
-`POST /v1/records/put` uses `RecordPutBody`, a `oneOf` union matching current
+`POST /v1/records/put` uses `RecordPutBody`, an `anyOf` union matching current
 server behavior: callers may send `RecordInput` directly or the wrapper
-`RecordPutRequest`. `GetRecordResponse.record` references `RecordOutput | null`;
+`RecordPutRequest`. The wrapper branch is intentionally closed to arbitrary
+extra fields but explicitly allows `database_id` and `branch_id` so configured
+SDKs and gateways can inject managed-routing metadata without falling back to
+the raw `RecordInput` branch. `anyOf` is required because the raw `RecordInput`
+schema is permissive for compatibility and can overlap with the wrapper shape
+under strict OpenAPI validators. No other wrapper-level fields are part of the
+contract; callers that relied on arbitrary wrapper keys must move those values
+inside `record.fields` or another documented record field before using generated
+SDK validators. `GetRecordResponse.record` references `RecordOutput | null`;
 `RecordOutput` includes the serialized `version_id` field. `HybridQuery`
 includes the existing JSON request knobs for `scalar_eq`, `graph_seed`, and
 `temporal_as_of`; these are native API fields, not SQL compatibility.
@@ -205,7 +213,7 @@ error-envelope helpers. This is current-envelope ergonomics, not a broader RFC
 | --- | --- | --- |
 | `POST /v1/schema/apply` | `TableSchema`: `name`, `primary_id_column`, `tenant_id_column`, scalar columns, text-indexed columns, and vector columns. Names must be GraphQL-safe identifiers. The server rejects duplicate columns, overlapping scalar/text/vector columns, reserved TraceDB result metadata fields, zero-dimension vectors, and undeclared or duplicate vector source columns before WAL append. | `{ "epoch": number }`. |
 | `POST /v1/insert` | `RecordInput`: `table`, `id`, `tenant_id`, and `fields`. | `{ "epoch": number }`. Kept for compatibility; prefer records routes for product examples. |
-| `POST /v1/records/put` | Either `RecordInput` directly or `{ "record": RecordInput }`. Full replacement write. | `{ "epoch": number }`. |
+| `POST /v1/records/put` | Either `RecordInput` directly or `{ "record": RecordInput, "database_id"?: string, "branch_id"?: string }`. The wrapper is closed to other top-level fields. Full replacement write. | `{ "epoch": number }`. |
 | `POST /v1/records/put-batch` | `RecordPutBatchRequest`: `records` plus optional `include_write_timing`. | `{ "epoch": number, "record_count": number }`; includes `write_timing` when requested. |
 | `POST /v1/records/patch` | `RecordPatchRequest`: `table`, `tenant_id`, `id`, and patch `fields`. | `{ "epoch": number }`. |
 | `POST /v1/records/delete` | `RecordDeleteRequest`: `table`, `tenant_id`, `id`, and optional `tombstone`. | `{ "deleted": true, "epoch": number }`. |

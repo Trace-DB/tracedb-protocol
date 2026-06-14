@@ -200,7 +200,7 @@ The following are the primary endpoints:
 | Method | Route | Body Type |
 | --- | --- | --- |
 | `POST` | `/v1/schema/apply` | `TableSchema` |
-| `POST` | `/v1/records/put` | `RecordInput` or `{ "record": RecordInput }` |
+| `POST` | `/v1/records/put` | `RecordInput` or `{ "record": RecordInput, "database_id"?: string, "branch_id"?: string }` |
 | `POST` | `/v1/records/put-batch` | `RecordPutBatchRequest` |
 | `POST` | `/v1/records/patch` | `RecordPatchRequest` |
 | `POST` | `/v1/records/delete` | `RecordDeleteRequest` |
@@ -214,6 +214,13 @@ The following are the primary endpoints:
 | `POST` | `/v1/admin/compact` | `{}` |
 | `POST` | `/v1/admin/snapshot` | `SnapshotRequest` |
 | `POST` | `/v1/admin/restore` | `RestoreRequest` |
+
+For `POST /v1/records/put`, SDKs may inject managed-routing fields into either
+accepted body shape. The wrapped form is `{ "record": RecordInput,
+"database_id"?: string, "branch_id"?: string }`; it is closed to other
+wrapper-level fields so generated SDK validators preserve a stable method
+signature. Caller-specific data belongs inside the record payload, not next to
+`record`.
 
 ### Gateway-Only: Bodyless Admin Routes
 

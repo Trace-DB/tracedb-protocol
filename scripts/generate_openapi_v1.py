@@ -299,11 +299,20 @@ def components() -> dict[str, Any]:
                 "Full replacement record write. The server also accepts RecordInput directly.",
                 {
                     "record": schema_ref("RecordInput"),
+                    "database_id": {
+                        "type": "string",
+                        "description": "Optional managed-routing database identifier injected by SDKs and gateways.",
+                    },
+                    "branch_id": {
+                        "type": "string",
+                        "description": "Optional managed-routing branch identifier injected by SDKs and gateways.",
+                    },
                 },
+                additional_properties=False,
             ),
             "RecordPutBody": {
-                "description": "Full replacement record write body. The server accepts either RecordInput directly or a wrapper with record.",
-                "oneOf": [schema_ref("RecordInput"), schema_ref("RecordPutRequest")],
+                "description": "Full replacement record write body. The server accepts RecordInput directly or a wrapper with record and optional routing metadata.",
+                "anyOf": [schema_ref("RecordInput"), schema_ref("RecordPutRequest")],
             },
             "RecordPutBatchRequest": object_schema(
                 "Batch record write.",
@@ -399,7 +408,6 @@ def components() -> dict[str, Any]:
                     "query": {"type": "string"},
                     "variables": object_schema("GraphQL variables map."),
                     "operationName": {"type": "string"},
-                    "operation_name": {"type": "string"},
                 },
             ),
             "GraphQlError": object_schema(
@@ -1009,6 +1017,43 @@ def validate_spec(spec: dict[str, Any]) -> None:
     extensions = schemas["GraphQlError"]["properties"]["extensions"]
     if extensions.get("properties", {}).get("code", {}).get("type") != "string":
         errors.append("GraphQlError.extensions.code must be documented as a string")
+
+    gql_props = schemas["GraphQlQueryRequest"].get("properties", {})
+    if "operationName" not in gql_props:
+        errors.append("GraphQlQueryRequest must define properties.operationName")
+    if "operation_name" in gql_props:
+        errors.append("GraphQlQueryRequest must not define properties.operation_name")
+    if gql_props.get("operationName", {}).get("type") != "string":
+        errors.append("GraphQlQueryRequest.operationName must be a string")
+
+    record_put_request = schemas["RecordPutRequest"]
+    if record_put_request.get("additionalProperties") is not False:
+        errors.append("RecordPutRequest.additionalProperties must be false")
+    record_put_known_props = record_put_request.get("properties", {})
+    record_put_props = set(record_put_known_props.keys())
+    expected_record_put_props = {"record", "database_id", "branch_id"}
+    if record_put_props != expected_record_put_props:
+        errors.append(
+            "RecordPutRequest must define only record plus database_id/branch_id"
+        )
+    if record_put_known_props.get("record", {}).get("$ref") != (
+        "#/components/schemas/RecordInput"
+    ):
+        errors.append("RecordPutRequest.record must reference RecordInput")
+    for routing_field in ("database_id", "branch_id"):
+        if record_put_known_props.get(routing_field, {}).get("type") != "string":
+            errors.append(f"RecordPutRequest.{routing_field} must be a string")
+    record_put_body = schemas["RecordPutBody"]
+    if "oneOf" in record_put_body:
+        errors.append("RecordPutBody must use anyOf, not oneOf")
+    record_put_body_refs = {
+        item.get("$ref") for item in record_put_body.get("anyOf", [])
+    }
+    if record_put_body_refs != {
+        "#/components/schemas/RecordInput",
+        "#/components/schemas/RecordPutRequest",
+    }:
+        errors.append("RecordPutBody.anyOf must include RecordInput and RecordPutRequest")
 
     insert_description = spec["paths"]["/v1/insert"]["post"]["description"]
     if "POST /v1/records/put" not in insert_description:
